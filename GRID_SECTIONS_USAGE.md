@@ -17,8 +17,17 @@ This is an enhanced version of the original layout-card that can run alongside t
 
 This document describes the new features added to the grid layout:
 
-1. **Section-based Grid Layout**: Automatically visible sections in all grid spots during edit mode
+1. **Section-based Grid Layout**: Visual sections in edit mode to help organize grid layouts
 2. **Custom CSS Injection**: Direct CSS injection into the layout/view layer
+
+⚠️ **Important**: Grid Layout Improved sections are a **visual organizational tool**, not a replacement for [Native HA Sections](https://www.home-assistant.io/dashboards/sections/). For full drag-and-drop functionality, use the native sections view. See [SECTIONS_VS_NATIVE.md](SECTIONS_VS_NATIVE.md) for detailed comparison.
+
+### What Grid Sections Provide:
+- ✅ Visual section boundaries in edit mode
+- ✅ Section headers showing grid area names
+- ✅ Help organizing complex grid layouts
+- ✅ Unassigned cards staging area
+- ❌ **No drag-and-drop between sections** (manual YAML assignment required)
 
 ## Feature 1: Section-based Grid Layout
 
@@ -121,20 +130,9 @@ cards:
 
 ### Adding Cards to Sections
 
-There are multiple ways to add cards to sections:
+⚠️ **Important**: Cards must be manually assigned to sections via YAML. There is no drag-and-drop.
 
-#### Method 1: Using the + Button (Easiest)
-1. Enter edit mode on your dashboard
-2. Click the **+** button in any section header
-3. Select the card type you want to add
-4. The card will be automatically assigned to that section
-
-#### Method 2: Drag from Unassigned Cards
-1. Add cards normally to your dashboard
-2. In edit mode, unassigned cards appear in the "Unassigned Cards" section at the bottom
-3. Drag cards from this section into the desired grid section (future enhancement)
-
-#### Method 3: Manual YAML Configuration
+#### Method 1: Manual YAML Configuration (Recommended)
 Set the `grid_area` property in the card's `view_layout`:
 
 ```yaml
@@ -145,6 +143,24 @@ cards:
     view_layout:
       grid_area: sidebar  # Assigns this card to the "sidebar" section
 ```
+
+#### Method 2: Edit Card in UI
+1. Click the **edit icon** (pencil) on any card
+2. Switch to **Show Code Editor** 
+3. Add or modify `view_layout`:
+   ```yaml
+   view_layout:
+     grid_area: your-section-name
+   ```
+4. Click **SAVE**
+
+#### Method 3: Using the + Button
+1. Enter edit mode
+2. Click the **+** button in any section header
+3. Select a card type and configure it
+4. **Important**: After adding, edit the card and manually set `view_layout.grid_area`
+
+The + button adds a card to the view, but you must still edit it to assign it to the section.
 
 ### Unassigned Cards Section
 

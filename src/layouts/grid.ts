@@ -200,7 +200,7 @@ class GridLayout extends BaseLayout {
       if (isEditMode && sectionCards.length === 0) {
         const placeholderEl = document.createElement("div");
         placeholderEl.className = "section-placeholder";
-        placeholderEl.textContent = "Drop cards here";
+        placeholderEl.textContent = "Click + to add cards, or edit cards to set view_layout.grid_area";
         sectionEl.appendChild(placeholderEl);
       }
       
