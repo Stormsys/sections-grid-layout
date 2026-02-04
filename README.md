@@ -1,32 +1,53 @@
-# layout-card
+# layout-card-improved
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
+Get more control over the placement of lovelace cards with enhanced features
 
-Get more control over the placement of lovelace cards
+## What's Improved
 
-For installation instructions [see this guide](https://github.com/thomasloven/hass-config/wiki/Lovelace-Plugins).
+This is an enhanced fork of the original layout-card with the following new features:
+
+1. **Section-Based Grid Layout** - Visible grid sections in edit mode with auto-detection from grid-template-areas
+2. **Custom CSS Injection** - Direct CSS control via `layout.custom_css` property
+3. **Dual-Run Compatible** - All elements use `-improved` suffix to avoid conflicts with stock layout-card
+
+See [DUAL_RUN_GUIDE.md](DUAL_RUN_GUIDE.md) for compatibility details and [GRID_SECTIONS_USAGE.md](GRID_SECTIONS_USAGE.md) for feature documentation.
+
+## Installation
+
+The built file is `layout-card-improved.js` - add this to your Home Assistant resources.
+
+**Important**: All card types use the `-improved` suffix:
+- `custom:grid-layout-improved`
+- `custom:masonry-layout-improved`
+- `custom:horizontal-layout-improved`
+- `custom:vertical-layout-improved`
+- `custom:layout-card-improved`
+- `custom:gap-card-improved`
+- `custom:layout-break-improved`
 
 ## Quick Start
 
 - Go to one of your lovelace views and select "Edit Dashboard"
 - Click the pencil symbol next to the view name to open up the view properties
-- Select "Masonry (layout-card)" from the "View type" dropdown list
+- Select "Masonry (layout-card-improved)" from the "View type" dropdown list
 - Click "Save"
 
-Hopefully, you should see no difference at all now.
-
-- Enter the following in the "Layout Options" box:
+- Enter the following in the "Layout Options" box to test basic layout options:
   ```yaml
   width: 300
   max_cols: 10
   ```
-- Click Save
 
-You should now have more, narrower, columns of cards in your view.
+- Or try the new custom CSS feature:
+  ```yaml
+  custom_css: |
+    #root {
+      background: var(--primary-color);
+      padding: 16px;
+    }
+  ```
 
-> Please note that the "LAYOUT" tab in the animation below is now incorporated in the "SETTINGS" tab instead.
-
-![Quick Start](https://user-images.githubusercontent.com/1299821/111066590-11abef80-84c0-11eb-809b-2843fd8610d8.gif)
+- For grid layouts with sections, see [GRID_SECTIONS_USAGE.md](GRID_SECTIONS_USAGE.md)
 
 ## Usage
 

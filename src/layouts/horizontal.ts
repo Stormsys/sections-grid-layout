@@ -19,4 +19,4 @@ class HorizontalLayout extends BaseColumnLayout {
   }
 }
 
-customElements.define("horizontal-layout", HorizontalLayout);
+customElements.define("horizontal-layout-improved", HorizontalLayout);

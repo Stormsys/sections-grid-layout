@@ -131,22 +131,22 @@ class LayoutCard extends LitElement {
   }
 
   static getConfigElement() {
-    return document.createElement("layout-card-editor");
+    return document.createElement("layout-card-improved-editor");
   }
   static getStubConfig() {
     return {
-      layout_type: "masonry",
+      layout_type: "masonry-improved",
       layout: {},
       cards: [],
     };
   }
 }
 
-customElements.define("layout-card", LayoutCard);
+customElements.define("layout-card-improved", LayoutCard);
 (window as any).customCards = (window as any).customCards || [];
 (window as any).customCards.push({
-  type: "layout-card",
-  name: "Layout Card",
+  type: "layout-card-improved",
+  name: "Layout Card Improved",
   preview: false,
-  description: "Like a stack card, but with way more control.",
+  description: "Layout Card with sections and custom CSS support.",
 });

@@ -303,4 +303,4 @@ class GridLayout extends BaseLayout {
   }
 }
 
-customElements.define("grid-layout", GridLayout);
+customElements.define("grid-layout-improved", GridLayout);

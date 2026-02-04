@@ -1,7 +1,7 @@
 {
-  "name": "layout-card",
+  "name": "layout-card-improved",
   "version": "2.4.7",
-  "description": "",
+  "description": "Improved version of layout-card with sections and custom CSS",
   "private": true,
   "scripts": {
     "build": "rollup -c",

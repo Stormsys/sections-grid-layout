@@ -3,7 +3,7 @@ import { property, state, query } from "lit/decorators.js";
 import { LayoutCardConfig } from "./types";
 import { loadHaForm, LAYOUT_CARD_SELECTOR_OPTIONS } from "./helpers";
 
-const DEFAULT_LAYOUT_TYPES = ["masonry", "sidebar", "panel"];
+const DEFAULT_LAYOUT_TYPES = ["masonry-improved", "sidebar", "panel"];
 
 class LayoutCardEditor extends LitElement {
   @property() _config: LayoutCardConfig;
@@ -142,7 +142,7 @@ class LayoutCardEditor extends LitElement {
   _computeLabel(schema) {
     if (schema.name === "layout_type")
       return this.hass.localize("ui.panel.lovelace.editor.edit_view.type");
-    if (schema.name === "layout") return "Layout options (layout-card)";
+    if (schema.name === "layout") return "Layout options (layout-card-improved)";
   }
 
   render() {
@@ -176,12 +176,7 @@ class LayoutCardEditor extends LitElement {
     };
     return html`
       <p>
-        See
-        <a
-          href="https://github.com/thomasloven/lovelace-layout-card"
-          target="_blank"
-          rel="no referrer"
-        >layout-card on GitHub</a> for usage instructions.
+        Layout Card Improved - enhanced version with sections and custom CSS support.
       </p>
       <ha-form
         .hass=${this.hass}
@@ -328,4 +323,4 @@ class LayoutCardEditor extends LitElement {
   }
 }
 
-customElements.define("layout-card-editor", LayoutCardEditor);
+customElements.define("layout-card-improved-editor", LayoutCardEditor);

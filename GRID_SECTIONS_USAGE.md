@@ -1,5 +1,18 @@
 # Grid Layout Sections & Custom CSS Usage Guide
 
+## Layout Card Improved
+
+This is an enhanced version of the original layout-card that can run alongside the stock version. All card types use the `-improved` suffix to avoid conflicts.
+
+**Card Types Available:**
+- `layout-card-improved` - Main layout card
+- `grid-layout-improved` - Grid layout view
+- `masonry-layout-improved` - Masonry layout view
+- `horizontal-layout-improved` - Horizontal layout view
+- `vertical-layout-improved` - Vertical layout view
+- `gap-card-improved` - Gap spacing card
+- `layout-break-improved` - Layout break card
+
 ## Overview
 
 This document describes the new features added to the grid layout:
@@ -20,7 +33,7 @@ In edit mode, grid layouts now support a section-based approach where each grid 
 Define sections explicitly in your layout configuration:
 
 ```yaml
-type: custom:grid-layout
+type: custom:grid-layout-improved
 layout:
   grid-template-columns: 1fr 1fr 1fr
   grid-template-rows: auto auto
@@ -58,7 +71,7 @@ cards:
 If you have `grid-template-areas` defined, sections will be auto-detected in edit mode:
 
 ```yaml
-type: custom:grid-layout
+type: custom:grid-layout-improved
 layout:
   grid-template-columns: 200px 1fr
   grid-template-rows: auto 1fr auto
@@ -107,7 +120,7 @@ You can now inject custom CSS directly into the grid layout, giving you complete
 Add a `custom_css` property to your layout configuration:
 
 ```yaml
-type: custom:grid-layout
+type: custom:grid-layout-improved
 layout:
   grid-template-columns: repeat(3, 1fr)
   grid-gap: 16px

@@ -15,4 +15,4 @@ class VerticalLayout extends BaseColumnLayout {
   }
 }
 
-customElements.define("vertical-layout", VerticalLayout);
+customElements.define("vertical-layout-improved", VerticalLayout);
