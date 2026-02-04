@@ -25,6 +25,12 @@ layout:
       background: var(--lovelace-background, #fafafa);
     }
     
+    /* Style only in edit mode using the edit-mode class */
+    #root.edit-mode {
+      background: #f0f0f0;
+      padding: 24px;
+    }
+    
     /* Style section containers in edit mode */
     .section-container.edit-mode {
       border-width: 3px;
@@ -214,6 +220,55 @@ layout:
 
 That's it! In edit mode you'll see 4 empty sections (a, b, c, d) ready for your cards!
 
+## Using the edit-mode Class
+
+The `#root` element gets the `edit-mode` class when you're editing the dashboard. Use it to apply different styles in edit vs normal mode:
+
+```yaml
+custom_css: |
+  /* Always applied */
+  #root {
+    padding: 16px;
+  }
+  
+  /* Only in edit mode */
+  #root.edit-mode {
+    background: #f5f5f5;
+    border: 2px solid var(--primary-color);
+  }
+  
+  /* Only in normal mode */
+  #root:not(.edit-mode) {
+    background: transparent;
+  }
+```
+
+### Practical Uses
+
+**Show grid structure in edit mode:**
+```yaml
+custom_css: |
+  #root.edit-mode {
+    background: 
+      repeating-linear-gradient(0deg, transparent, transparent 99px, rgba(0,0,0,0.1) 99px, rgba(0,0,0,0.1) 100px),
+      repeating-linear-gradient(90deg, transparent, transparent 99px, rgba(0,0,0,0.1) 99px, rgba(0,0,0,0.1) 100px);
+    background-size: 100px 100px;
+  }
+```
+
+**Different spacing in edit mode:**
+```yaml
+custom_css: |
+  #root.edit-mode {
+    padding: 32px;
+    gap: 24px;
+  }
+  #root:not(.edit-mode) {
+    padding: 8px;
+    gap: 12px;
+  }
+```
+
 ## Custom CSS Examples
 
 ### Glassmorphism Effect
@@ -232,12 +287,42 @@ custom_css: |
 ### Dark Mode Sections
 ```yaml
 custom_css: |
+  #root.edit-mode {
+    background: #1a1a1a;
+  }
   .section-container.edit-mode {
     background: rgba(0, 0, 0, 0.6);
     border-color: #4a9eff;
   }
   .section-grid-label {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+```
+
+### Edit Mode vs Normal Mode Styling
+```yaml
+custom_css: |
+  /* Normal mode - clean and minimal */
+  #root {
+    padding: 8px;
+    background: transparent;
+  }
+  
+  /* Edit mode - show grid structure */
+  #root.edit-mode {
+    padding: 20px;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(0, 0, 0, 0.03) 10px,
+      rgba(0, 0, 0, 0.03) 20px
+    );
+  }
+  
+  /* Hide section labels in normal mode if you want */
+  #root:not(.edit-mode) .section-grid-label {
+    display: none;
   }
 ```
 

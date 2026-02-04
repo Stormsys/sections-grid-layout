@@ -102,8 +102,15 @@ class GridLayout extends BaseLayout {
   }
 
   async _placeCards() {
-    const root = this.shadowRoot.querySelector("#root");
+    const root = this.shadowRoot.querySelector("#root") as HTMLElement;
     while (root.firstChild) root.removeChild(root.firstChild);
+    
+    // Add/remove edit-mode class on root
+    if (this.lovelace?.editMode) {
+      root.classList.add("edit-mode");
+    } else {
+      root.classList.remove("edit-mode");
+    }
     
     // If using native sections, render them in grid positions
     if (this._config.sections && this._config.sections.length > 0) {
