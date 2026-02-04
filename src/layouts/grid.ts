@@ -43,6 +43,17 @@ class GridLayout extends BaseLayout {
 
   async updated(changedProperties) {
     await super.updated(changedProperties);
+    
+    // Update edit-mode class on root whenever edit mode changes
+    const root = this.shadowRoot?.querySelector("#root") as HTMLElement;
+    if (root) {
+      if (this.lovelace?.editMode) {
+        root.classList.add("edit-mode");
+      } else {
+        root.classList.remove("edit-mode");
+      }
+    }
+    
     if (changedProperties.has("cards") || changedProperties.has("_editMode")) {
       this._placeCards();
     }
@@ -51,28 +62,8 @@ class GridLayout extends BaseLayout {
   async firstUpdated() {
     this._setGridStyles();
     
-    // Create background element if background_image is set
-    if (this._config.layout?.background_image) {
-      const bgImage = this._renderTemplate(this._config.layout.background_image);
-      const blur = this._config.layout?.background_blur || "0px";
-      const opacity = this._config.layout?.background_opacity ?? 1;
-      
-      const bgEl = document.createElement("div");
-      bgEl.className = "background";
-      bgEl.style.cssText = `
-        position: fixed;
-        inset: 0;
-        background: url('${bgImage}');
-        background-position: center;
-        background-repeat: no-repeat;
-        background-size: cover;
-        background-attachment: fixed;
-        filter: blur(${blur});
-        opacity: ${opacity};
-        z-index: -1;
-      `;
-      this.shadowRoot.appendChild(bgEl);
-    }
+    // Update background when config changes
+    this._updateBackground();
 
     const styleEl = document.createElement("style");
     styleEl.innerHTML = `
@@ -86,6 +77,42 @@ class GridLayout extends BaseLayout {
       }
       ${this._config.layout?.custom_css || ""}`;
     this.shadowRoot.appendChild(styleEl);
+  }
+
+  _updateBackground() {
+    // Remove existing background if any
+    const existingBg = this.shadowRoot.querySelector(".background");
+    if (existingBg) {
+      existingBg.remove();
+    }
+    
+    // Create background element if background_image is set
+    if (this._config.layout?.background_image) {
+      const bgImage = this._renderTemplate(this._config.layout.background_image);
+      const blur = this._config.layout?.background_blur || "0px";
+      const opacity = this._config.layout?.background_opacity ?? 1;
+      
+      const bgEl = document.createElement("div");
+      bgEl.className = "background";
+      bgEl.style.position = "fixed";
+      bgEl.style.top = "0";
+      bgEl.style.left = "0";
+      bgEl.style.right = "0";
+      bgEl.style.bottom = "0";
+      bgEl.style.backgroundImage = `url('${bgImage}')`;
+      bgEl.style.backgroundPosition = "center";
+      bgEl.style.backgroundRepeat = "no-repeat";
+      bgEl.style.backgroundSize = "cover";
+      bgEl.style.backgroundAttachment = "fixed";
+      bgEl.style.filter = `blur(${blur})`;
+      bgEl.style.opacity = opacity.toString();
+      bgEl.style.zIndex = "-1";
+      
+      console.log("Background image element created:", bgImage, "blur:", blur, "opacity:", opacity);
+      
+      // Insert at the beginning of shadowRoot (before #root)
+      this.shadowRoot.insertBefore(bgEl, this.shadowRoot.firstChild);
+    }
   }
 
   _renderTemplate(template: string): string {
@@ -148,13 +175,6 @@ class GridLayout extends BaseLayout {
   async _placeCards() {
     const root = this.shadowRoot.querySelector("#root") as HTMLElement;
     while (root.firstChild) root.removeChild(root.firstChild);
-    
-    // Add/remove edit-mode class on root
-    if (this.lovelace?.editMode) {
-      root.classList.add("edit-mode");
-    } else {
-      root.classList.remove("edit-mode");
-    }
     
     // If using native sections, render them in grid positions
     if (this._config.sections && this._config.sections.length > 0) {
