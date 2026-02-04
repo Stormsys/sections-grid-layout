@@ -58,6 +58,18 @@ layout:
 ```
 
 ### Dynamic Background with Jinja
+
+**Important**: Use proper YAML multiline syntax for templates!
+
+```yaml
+layout:
+  # Use state value for background
+  background_image: "{{ states('input_text.current_background_image') }}"
+  background_blur: 15px
+  background_opacity: 0.6
+```
+
+Or with multiline template:
 ```yaml
 layout:
   # Use weather condition for background

@@ -54,6 +54,11 @@ class GridLayout extends BaseLayout {
       }
     }
     
+    // Update background when hass changes (for reactive templates)
+    if (changedProperties.has("hass") && this._config.layout?.background_image) {
+      await this._updateBackground();
+    }
+    
     if (changedProperties.has("cards") || changedProperties.has("_editMode")) {
       this._placeCards();
     }
@@ -63,7 +68,7 @@ class GridLayout extends BaseLayout {
     this._setGridStyles();
     
     // Update background when config changes
-    this._updateBackground();
+    await this._updateBackground();
 
     const styleEl = document.createElement("style");
     styleEl.innerHTML = `
@@ -79,7 +84,7 @@ class GridLayout extends BaseLayout {
     this.shadowRoot.appendChild(styleEl);
   }
 
-  _updateBackground() {
+  async _updateBackground() {
     // Remove existing background if any
     const existingBg = this.shadowRoot.querySelector(".background");
     if (existingBg) {
@@ -88,7 +93,7 @@ class GridLayout extends BaseLayout {
     
     // Create background element if background_image is set
     if (this._config.layout?.background_image) {
-      const bgImage = this._renderTemplate(this._config.layout.background_image);
+      const bgImage = await this._renderTemplate(this._config.layout.background_image);
       const blur = this._config.layout?.background_blur || "0px";
       const opacity = this._config.layout?.background_opacity ?? 1;
       
@@ -115,20 +120,22 @@ class GridLayout extends BaseLayout {
     }
   }
 
-  _renderTemplate(template: string): string {
-    // Simple Jinja-like template rendering
-    // This will be processed by HA's template system if it's a template
+  async _renderTemplate(template: string): Promise<string> {
+    // Render Jinja templates using Home Assistant's template system
     if (!template) return "";
     
     // Check if it's a Jinja template
     if (template.includes("{{") || template.includes("{%")) {
-      // Try to render via hass
       try {
-        // For now, return as-is. HA will process it if needed.
-        // Full Jinja rendering would require hass.callWS
-        return template;
+        // Use Home Assistant's template rendering via WebSocket
+        const result = await this.hass.callWS({
+          type: "render_template",
+          template: template,
+        });
+        console.log("Template rendered:", template, "->", result);
+        return result;
       } catch (e) {
-        console.warn("Template rendering failed:", e);
+        console.warn("Template rendering failed:", e, "Using raw template:", template);
         return template;
       }
     }
