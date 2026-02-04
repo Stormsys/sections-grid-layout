@@ -53,11 +53,17 @@ sections:
 
 ## Current Status
 
-I've started implementing this! The code now:
+**FULLY IMPLEMENTED!** ✅
+
+The code now:
 - ✅ Accepts `sections:` configuration
 - ✅ Creates native `hui-section` elements
 - ✅ Positions them via `grid_area`
-- ⚠️ Needs testing with actual HA sections
+- ✅ Full drag-and-drop within sections
+- ✅ Visual edit mode indicators
+- ✅ Grid area labels in corners
+- ✅ Dashed borders in edit mode
+- ✅ Hover effects for clarity
 
 ## Example Layouts
 
@@ -169,6 +175,17 @@ sections:
         entities: [light.room]
       # Drag and drop works!
 ```
+
+## Visual Edit Mode
+
+In edit mode, you'll see:
+- **Dashed border** around each section (blue by default)
+- **Grid area label** in top-right corner showing the section's position
+- **Hover effects** - border and label change to accent color when hovering
+- **Light background tint** to distinguish sections
+- **Clean appearance** in normal mode - no borders or labels
+
+The visual indicators make it crystal clear which section is which and where they're positioned in your grid!
 
 ## This Is Exactly What You Asked For!
 

@@ -135,19 +135,35 @@ class GridLayout extends BaseLayout {
   }
 
   async _placeNativeSections(root: Element) {
+    const isEditMode = this.lovelace?.editMode;
+    
     // Create native hui-section elements positioned in the grid
     for (let i = 0; i < this._config.sections.length; i++) {
       const sectionConfig = this._config.sections[i];
       
-      // Create native section element
-      const sectionEl = await this._createNativeSection(sectionConfig, i);
+      // Wrap section in container for visual indicators
+      const container = document.createElement("div");
+      container.className = isEditMode ? "section-container edit-mode" : "section-container";
       
-      // Apply grid positioning
+      // Apply grid positioning to container
       if (sectionConfig.grid_area) {
-        sectionEl.style.gridArea = sectionConfig.grid_area;
+        container.style.gridArea = sectionConfig.grid_area;
+        container.setAttribute("data-grid-area", sectionConfig.grid_area);
       }
       
-      root.appendChild(sectionEl);
+      // Add visual label in edit mode
+      if (isEditMode && sectionConfig.grid_area) {
+        const label = document.createElement("div");
+        label.className = "section-grid-label";
+        label.textContent = sectionConfig.grid_area;
+        container.appendChild(label);
+      }
+      
+      // Create native section element
+      const sectionEl = await this._createNativeSection(sectionConfig, i);
+      container.appendChild(sectionEl);
+      
+      root.appendChild(container);
     }
   }
 
@@ -489,6 +505,49 @@ class GridLayout extends BaseLayout {
         }
         .grid-section:not(.edit-mode) > * {
           margin: var(--masonry-view-card-margin, 4px 4px 8px);
+        }
+        
+        /* Native section containers */
+        .section-container {
+          position: relative;
+          display: flex;
+          flex-direction: column;
+        }
+        
+        .section-container.edit-mode {
+          border: 2px dashed var(--primary-color, #03a9f4);
+          border-radius: 8px;
+          padding: 8px;
+          background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.05);
+          transition: all 0.2s ease;
+        }
+        
+        .section-container.edit-mode:hover {
+          background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.1);
+          border-color: var(--accent-color, #ff9800);
+        }
+        
+        .section-grid-label {
+          position: absolute;
+          top: 4px;
+          right: 4px;
+          background: var(--primary-color, #03a9f4);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          opacity: 0.8;
+          pointer-events: none;
+          z-index: 10;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .section-container.edit-mode:hover .section-grid-label {
+          opacity: 1;
+          background: var(--accent-color, #ff9800);
         }
       `,
     ];
