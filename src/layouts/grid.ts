@@ -55,6 +55,14 @@ class GridLayout extends BaseLayout {
       }
     }
     
+    // Re-evaluate template when hass changes (for reactive backgrounds)
+    if (changedProperties.has("hass") && this._config.layout?.background_image) {
+      const template = this._config.layout.background_image;
+      if (template.includes("{{") || template.includes("{%")) {
+        this._evaluateTemplate();
+      }
+    }
+    
     if (changedProperties.has("cards") || changedProperties.has("_editMode")) {
       this._placeCards();
     }
@@ -90,67 +98,71 @@ class GridLayout extends BaseLayout {
   }
 
   _setupTemplateSubscription() {
-    // Unsubscribe from previous subscription if exists
-    if (this._unsubscribeTemplate) {
-      this._unsubscribeTemplate();
-      this._unsubscribeTemplate = undefined;
-    }
-    
     const template = this._config.layout?.background_image;
     if (!template) return;
     
-    // Only subscribe if it's a template
+    // If not a template, just use static value
     if (!template.includes("{{") && !template.includes("{%")) {
-      // Not a template, just update background directly
       this._updateBackgroundWithImage(template);
       return;
     }
     
-    // Subscribe to template updates using HA's subscription system
-    console.log("Subscribing to template:", template);
+    // For templates, use a simpler approach: evaluate on hass updates
+    console.log("Template detected, will evaluate from hass states");
+    this._evaluateTemplate();
+  }
+
+  _evaluateTemplate() {
+    const template = this._config.layout?.background_image;
+    if (!template || !this.hass) return;
     
     try {
-      // Use Home Assistant's subscribeRenderTemplate if available
-      const subscribeRenderTemplate = (this.hass as any).connection?.subscribeMessage;
+      // Simple template evaluation using JavaScript
+      // Parse {{ states('entity_id') }} pattern
+      const statesMatch = template.match(/states\(['"]([^'"]+)['"]\)/);
       
-      if (!subscribeRenderTemplate) {
-        console.error("subscribeMessage not available, falling back to static");
-        this._updateBackgroundWithImage(template);
+      if (statesMatch) {
+        const entityId = statesMatch[1];
+        const value = this.hass.states[entityId]?.state;
+        
+        console.log(`Evaluated template: ${template}`);
+        console.log(`  Entity: ${entityId}`);
+        console.log(`  Value: ${value}`);
+        
+        if (value && value !== "unknown" && value !== "unavailable") {
+          this._updateBackgroundWithImage(value);
+        } else {
+          console.warn(`Entity ${entityId} has no valid value:`, value);
+        }
         return;
       }
       
-      // Subscribe to template updates
-      this._unsubscribeTemplate = subscribeRenderTemplate(
-        (result: any) => {
-          console.log("Template update received:", result);
-          
-          if (result && typeof result === "object") {
-            // Handle error responses
-            if ("error" in result) {
-              console.error("Template error:", result.error);
-              return;
-            }
-            
-            // Extract the result value
-            const value = result.result || result;
-            console.log("Template rendered to:", value);
-            this._updateBackgroundWithImage(value);
-          } else {
-            // Direct result
-            console.log("Template rendered to:", result);
-            this._updateBackgroundWithImage(result);
-          }
-        },
-        {
-          type: "render_template",
-          template: template,
-        }
-      );
+      // Parse {{ state_attr('entity_id', 'attribute') }} pattern  
+      const attrMatch = template.match(/state_attr\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"]\)/);
       
-      console.log("Template subscription created");
+      if (attrMatch) {
+        const entityId = attrMatch[1];
+        const attr = attrMatch[2];
+        const value = this.hass.states[entityId]?.attributes?.[attr];
+        
+        console.log(`Evaluated template: ${template}`);
+        console.log(`  Entity: ${entityId}, Attribute: ${attr}`);
+        console.log(`  Value: ${value}`);
+        
+        if (value) {
+          this._updateBackgroundWithImage(value);
+        } else {
+          console.warn(`Entity ${entityId} attribute ${attr} not found`);
+        }
+        return;
+      }
+      
+      // Fallback: use the template string as-is
+      console.warn("Template format not recognized, using as static:", template);
+      this._updateBackgroundWithImage(template);
+      
     } catch (e) {
-      console.error("Failed to subscribe to template:", e);
-      // Fallback to static value
+      console.error("Template evaluation failed:", e);
       this._updateBackgroundWithImage(template);
     }
   }
