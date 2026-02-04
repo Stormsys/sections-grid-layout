@@ -12,6 +12,7 @@ class GridLayout extends BaseLayout {
   _mediaQueries: Array<MediaQueryList | null> = [];
   _layoutMQs: Array<MediaQueryList | null> = [];
   _config: GridViewConfig;
+  _unsubscribeTemplate?: () => void;
 
   async setConfig(config: GridViewConfig) {
     await super.setConfig(config);
@@ -54,11 +55,6 @@ class GridLayout extends BaseLayout {
       }
     }
     
-    // Update background when hass changes (for reactive templates)
-    if (changedProperties.has("hass") && this._config.layout?.background_image) {
-      await this._updateBackground();
-    }
-    
     if (changedProperties.has("cards") || changedProperties.has("_editMode")) {
       this._placeCards();
     }
@@ -67,8 +63,8 @@ class GridLayout extends BaseLayout {
   async firstUpdated() {
     this._setGridStyles();
     
-    // Update background when config changes
-    await this._updateBackground();
+    // Setup template subscription for reactive background updates
+    this._setupTemplateSubscription();
 
     const styleEl = document.createElement("style");
     styleEl.innerHTML = `
@@ -84,127 +80,118 @@ class GridLayout extends BaseLayout {
     this.shadowRoot.appendChild(styleEl);
   }
 
-  async _updateBackground() {
-    // Remove existing background if any
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Unsubscribe from template when element is removed
+    if (this._unsubscribeTemplate) {
+      this._unsubscribeTemplate();
+      this._unsubscribeTemplate = undefined;
+    }
+  }
+
+  _setupTemplateSubscription() {
+    // Unsubscribe from previous subscription if exists
+    if (this._unsubscribeTemplate) {
+      this._unsubscribeTemplate();
+      this._unsubscribeTemplate = undefined;
+    }
+    
+    const template = this._config.layout?.background_image;
+    if (!template) return;
+    
+    // Only subscribe if it's a template
+    if (!template.includes("{{") && !template.includes("{%")) {
+      // Not a template, just update background directly
+      this._updateBackgroundWithImage(template);
+      return;
+    }
+    
+    // Subscribe to template updates using HA's subscription system
+    console.log("Subscribing to template:", template);
+    
+    try {
+      // Use Home Assistant's subscribeRenderTemplate if available
+      const subscribeRenderTemplate = (this.hass as any).connection?.subscribeMessage;
+      
+      if (!subscribeRenderTemplate) {
+        console.error("subscribeMessage not available, falling back to static");
+        this._updateBackgroundWithImage(template);
+        return;
+      }
+      
+      // Subscribe to template updates
+      this._unsubscribeTemplate = subscribeRenderTemplate(
+        (result: any) => {
+          console.log("Template update received:", result);
+          
+          if (result && typeof result === "object") {
+            // Handle error responses
+            if ("error" in result) {
+              console.error("Template error:", result.error);
+              return;
+            }
+            
+            // Extract the result value
+            const value = result.result || result;
+            console.log("Template rendered to:", value);
+            this._updateBackgroundWithImage(value);
+          } else {
+            // Direct result
+            console.log("Template rendered to:", result);
+            this._updateBackgroundWithImage(result);
+          }
+        },
+        {
+          type: "render_template",
+          template: template,
+        }
+      );
+      
+      console.log("Template subscription created");
+    } catch (e) {
+      console.error("Failed to subscribe to template:", e);
+      // Fallback to static value
+      this._updateBackgroundWithImage(template);
+    }
+  }
+
+  _updateBackgroundWithImage(bgImage: string) {
+    if (!bgImage || bgImage === "null" || bgImage === "undefined") {
+      console.error("❌ Invalid background image value:", bgImage);
+      return;
+    }
+    
+    // Remove existing background
     const existingBg = this.shadowRoot.querySelector(".background");
     if (existingBg) {
       existingBg.remove();
     }
     
-    // Create background element if background_image is set
-    if (this._config.layout?.background_image) {
-      const bgImageRaw = await this._renderTemplate(this._config.layout.background_image);
-      // Trim whitespace and newlines from template result
-      const bgImage = bgImageRaw.trim();
-      const blur = this._config.layout?.background_blur || "0px";
-      const opacity = this._config.layout?.background_opacity ?? 1;
-      
-      console.log("Background image (raw):", JSON.stringify(bgImageRaw));
-      console.log("Background image (trimmed):", JSON.stringify(bgImage));
-      
-      // Check for null/undefined/invalid values
-      if (!bgImage || bgImage === "null" || bgImage === "undefined" || bgImage === "None") {
-        console.error("❌ Background image rendered to invalid value:", bgImage);
-        console.error("📝 Template:", this._config.layout.background_image);
-        console.error("💡 Fix:");
-        console.error("   1. Check entity exists: Developer Tools → States → search 'input_text.current_background_image'");
-        console.error("   2. Make sure entity has a value set");
-        console.error("   3. Or use a static path for testing: background_image: /local/backgrounds/your-image.jpg");
-        return;
-      }
-      
-      const bgEl = document.createElement("div");
-      bgEl.className = "background";
-      
-      // Set all styles individually
-      bgEl.style.position = "fixed";
-      bgEl.style.top = "0";
-      bgEl.style.left = "0";
-      bgEl.style.right = "0";
-      bgEl.style.bottom = "0";
-      bgEl.style.backgroundPosition = "center";
-      bgEl.style.backgroundRepeat = "no-repeat";
-      bgEl.style.backgroundSize = "cover";
-      bgEl.style.backgroundAttachment = "fixed";
-      bgEl.style.filter = `blur(${blur})`;
-      bgEl.style.opacity = opacity.toString();
-      bgEl.style.zIndex = "-1";
-      
-      // Set background-image separately and log it
-      const bgImageUrl = `url('${bgImage}')`;
-      bgEl.style.backgroundImage = bgImageUrl;
-      console.log("Setting background-image to:", bgImageUrl);
-      console.log("Element style.backgroundImage:", bgEl.style.backgroundImage);
-      
-      // Insert at the beginning of shadowRoot (before #root)
-      this.shadowRoot.insertBefore(bgEl, this.shadowRoot.firstChild);
-      
-      // Verify it was added
-      setTimeout(() => {
-        const check = this.shadowRoot.querySelector(".background") as HTMLElement;
-        if (check) {
-          console.log("Background element in DOM:", check.style.backgroundImage);
-        } else {
-          console.error("Background element not found in DOM!");
-        }
-      }, 100);
-    }
-  }
-
-  async _renderTemplate(template: string): Promise<string> {
-    // Render Jinja templates using Home Assistant's template system
-    if (!template) return "";
+    const blur = this._config.layout?.background_blur || "0px";
+    const opacity = this._config.layout?.background_opacity ?? 1;
     
-    // Trim the template first
-    template = template.trim();
+    console.log("Creating background with image:", bgImage, "blur:", blur, "opacity:", opacity);
     
-    // Check if it's a Jinja template
-    if (template.includes("{{") || template.includes("{%")) {
-      try {
-        console.log("Rendering template:", template);
-        
-        // Use Home Assistant's template rendering via WebSocket
-        const response = await this.hass.callWS({
-          type: "render_template",
-          template: template,
-        });
-        
-        console.log("Raw WS response:", response);
-        console.log("Response type:", typeof response);
-        console.log("Response is null?:", response === null);
-        console.log("Response is undefined?:", response === undefined);
-        console.log("Response toString:", String(response));
-        
-        if (response && typeof response === "object") {
-          console.log("Response keys:", Object.keys(response));
-          console.log("Response values:", Object.values(response));
-          console.log("Full response:", JSON.stringify(response));
-        }
-        
-        // The response IS the rendered string directly
-        console.log("Template rendered successfully:", template, "->", response);
-        
-        // Return the result, trimmed
-        if (response === null || response === undefined) {
-          console.error("❌ Template rendered to null/undefined!");
-          console.error("This usually means:");
-          console.error("  1. Entity doesn't exist yet");
-          console.error("  2. Template has syntax error");
-          console.error("  3. WebSocket API is returning unexpected format");
-          return "";
-        }
-        
-        return typeof response === "string" ? response.trim() : String(response).trim();
-      } catch (e) {
-        console.error("Template rendering failed:", e);
-        console.error("Error details:", JSON.stringify(e));
-        console.error("Template was:", template);
-        return template;
-      }
-    }
+    const bgEl = document.createElement("div");
+    bgEl.className = "background";
+    bgEl.style.position = "fixed";
+    bgEl.style.top = "0";
+    bgEl.style.left = "0";
+    bgEl.style.right = "0";
+    bgEl.style.bottom = "0";
+    bgEl.style.backgroundImage = `url('${bgImage}')`;
+    bgEl.style.backgroundPosition = "center";
+    bgEl.style.backgroundRepeat = "no-repeat";
+    bgEl.style.backgroundSize = "cover";
+    bgEl.style.backgroundAttachment = "fixed";
+    bgEl.style.filter = `blur(${blur})`;
+    bgEl.style.opacity = opacity.toString();
+    bgEl.style.zIndex = "-1";
     
-    console.log("Not a template, using directly:", template);
-    return template;
+    console.log("✅ Background element created with image:", bgEl.style.backgroundImage);
+    
+    // Insert at the beginning of shadowRoot
+    this.shadowRoot.insertBefore(bgEl, this.shadowRoot.firstChild);
   }
 
   _setGridStyles() {
