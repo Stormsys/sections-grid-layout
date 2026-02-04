@@ -1,6 +1,6 @@
 {
   "name": "layout-card-improved",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "Improved version of layout-card with sections and custom CSS",
   "private": true,
   "scripts": {
