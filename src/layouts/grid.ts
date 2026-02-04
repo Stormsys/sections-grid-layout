@@ -102,6 +102,17 @@ class GridLayout extends BaseLayout {
       console.log("Background image (raw):", JSON.stringify(bgImageRaw));
       console.log("Background image (trimmed):", JSON.stringify(bgImage));
       
+      // Check for null/undefined/invalid values
+      if (!bgImage || bgImage === "null" || bgImage === "undefined" || bgImage === "None") {
+        console.error("❌ Background image rendered to invalid value:", bgImage);
+        console.error("📝 Template:", this._config.layout.background_image);
+        console.error("💡 Fix:");
+        console.error("   1. Check entity exists: Developer Tools → States → search 'input_text.current_background_image'");
+        console.error("   2. Make sure entity has a value set");
+        console.error("   3. Or use a static path for testing: background_image: /local/backgrounds/your-image.jpg");
+        return;
+      }
+      
       const bgEl = document.createElement("div");
       bgEl.className = "background";
       
@@ -153,14 +164,32 @@ class GridLayout extends BaseLayout {
         console.log("Rendering template:", template);
         
         // Use Home Assistant's template rendering via WebSocket
-        const result = await this.hass.callWS({
+        const response = await this.hass.callWS({
           type: "render_template",
           template: template,
         });
         
+        console.log("Raw WS response:", response);
+        console.log("Response type:", typeof response);
+        console.log("Response keys:", response ? Object.keys(response) : "null");
+        
+        // The response might be wrapped in an object
+        let result = response;
+        
+        // Check if response has a result property
+        if (response && typeof response === "object" && "result" in response) {
+          result = response.result;
+          console.log("Extracted from .result:", result);
+        }
+        
         console.log("Template rendered successfully:", template, "->", result);
         
         // Return the result, trimmed
+        if (result === null || result === undefined) {
+          console.error("Template rendered to null/undefined. Entity might not exist or have no value.");
+          return "";
+        }
+        
         return typeof result === "string" ? result.trim() : String(result).trim();
       } catch (e) {
         console.error("Template rendering failed:", e, "Template was:", template);
