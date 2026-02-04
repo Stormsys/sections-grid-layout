@@ -171,28 +171,34 @@ class GridLayout extends BaseLayout {
         
         console.log("Raw WS response:", response);
         console.log("Response type:", typeof response);
-        console.log("Response keys:", response ? Object.keys(response) : "null");
+        console.log("Response is null?:", response === null);
+        console.log("Response is undefined?:", response === undefined);
+        console.log("Response toString:", String(response));
         
-        // The response might be wrapped in an object
-        let result = response;
-        
-        // Check if response has a result property
-        if (response && typeof response === "object" && "result" in response) {
-          result = response.result;
-          console.log("Extracted from .result:", result);
+        if (response && typeof response === "object") {
+          console.log("Response keys:", Object.keys(response));
+          console.log("Response values:", Object.values(response));
+          console.log("Full response:", JSON.stringify(response));
         }
         
-        console.log("Template rendered successfully:", template, "->", result);
+        // The response IS the rendered string directly
+        console.log("Template rendered successfully:", template, "->", response);
         
         // Return the result, trimmed
-        if (result === null || result === undefined) {
-          console.error("Template rendered to null/undefined. Entity might not exist or have no value.");
+        if (response === null || response === undefined) {
+          console.error("❌ Template rendered to null/undefined!");
+          console.error("This usually means:");
+          console.error("  1. Entity doesn't exist yet");
+          console.error("  2. Template has syntax error");
+          console.error("  3. WebSocket API is returning unexpected format");
           return "";
         }
         
-        return typeof result === "string" ? result.trim() : String(result).trim();
+        return typeof response === "string" ? response.trim() : String(response).trim();
       } catch (e) {
-        console.error("Template rendering failed:", e, "Template was:", template);
+        console.error("Template rendering failed:", e);
+        console.error("Error details:", JSON.stringify(e));
+        console.error("Template was:", template);
         return template;
       }
     }
