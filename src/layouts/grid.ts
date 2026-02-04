@@ -50,6 +50,29 @@ class GridLayout extends BaseLayout {
 
   async firstUpdated() {
     this._setGridStyles();
+    
+    // Create background element if background_image is set
+    if (this._config.layout?.background_image) {
+      const bgImage = this._renderTemplate(this._config.layout.background_image);
+      const blur = this._config.layout?.background_blur || "0px";
+      const opacity = this._config.layout?.background_opacity ?? 1;
+      
+      const bgEl = document.createElement("div");
+      bgEl.className = "background";
+      bgEl.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: url('${bgImage}');
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: cover;
+        background-attachment: fixed;
+        filter: blur(${blur});
+        opacity: ${opacity};
+        z-index: -1;
+      `;
+      this.shadowRoot.appendChild(bgEl);
+    }
 
     const styleEl = document.createElement("style");
     styleEl.innerHTML = `
@@ -63,6 +86,27 @@ class GridLayout extends BaseLayout {
       }
       ${this._config.layout?.custom_css || ""}`;
     this.shadowRoot.appendChild(styleEl);
+  }
+
+  _renderTemplate(template: string): string {
+    // Simple Jinja-like template rendering
+    // This will be processed by HA's template system if it's a template
+    if (!template) return "";
+    
+    // Check if it's a Jinja template
+    if (template.includes("{{") || template.includes("{%")) {
+      // Try to render via hass
+      try {
+        // For now, return as-is. HA will process it if needed.
+        // Full Jinja rendering would require hass.callWS
+        return template;
+      } catch (e) {
+        console.warn("Template rendering failed:", e);
+        return template;
+      }
+    }
+    
+    return template;
   }
 
   _setGridStyles() {

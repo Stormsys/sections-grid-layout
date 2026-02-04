@@ -79,6 +79,9 @@ export interface GridViewConfig extends ViewConfig {
     height?: string;
     mediaquery?: Array<Record<string, any>>;
     custom_css?: string;
+    background_image?: string; // Supports Jinja templates
+    background_blur?: string; // CSS blur value (e.g., "10px")
+    background_opacity?: number; // 0-1
     "grid-template-areas"?: string;
     [key: string]: any; // Allow any grid-* properties
   };

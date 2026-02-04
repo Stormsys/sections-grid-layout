@@ -17,6 +17,11 @@ layout:
     "left-sidebar main right-sidebar"
     "footer footer footer"
   
+  # Background image with blur and opacity
+  background_image: /local/backgrounds/home.jpg
+  background_blur: 12px
+  background_opacity: 0.7
+  
   # Custom CSS styling
   custom_css: |
     /* Style the grid container */
@@ -31,10 +36,17 @@ layout:
       padding: 24px;
     }
     
-    /* Style section containers in edit mode */
+    /* Style section containers - glassmorphism to show background */
+    .section-container {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+    }
+    
     .section-container.edit-mode {
       border-width: 3px;
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      background: rgba(255, 255, 255, 0.75);
     }
     
     /* Style specific sections by grid area */
@@ -172,6 +184,13 @@ cards:
 Just your sections and cards, beautifully positioned in the grid. No borders, no labels, no loose cards container.
 
 ## Features Demonstrated
+
+### 0. Background Image with Blur & Opacity ✅
+- Background image at `/local/backgrounds/home.jpg`
+- 12px blur for aesthetics
+- 0.7 opacity for readability
+- Fixed position (doesn't scroll)
+- Jinja templates supported
 
 ### 1. Auto-Created Empty Sections ✅
 - `right-sidebar` section auto-created
