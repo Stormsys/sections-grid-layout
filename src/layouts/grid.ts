@@ -154,6 +154,9 @@ class GridLayout extends BaseLayout {
     const blur = this._config.layout?.background_blur || "0px";
     const opacity = this._config.layout?.background_opacity ?? 1;
     
+    // Detect header height
+    const headerHeight = this._getHeaderHeight();
+    
     // Update existing background element or create new one
     let bgEl = this.shadowRoot.querySelector(".background") as HTMLElement;
     
@@ -162,7 +165,6 @@ class GridLayout extends BaseLayout {
       bgEl = document.createElement("div");
       bgEl.className = "background";
       bgEl.style.position = "fixed";
-      bgEl.style.top = "0";
       bgEl.style.left = "0";
       bgEl.style.right = "0";
       bgEl.style.bottom = "0";
@@ -174,10 +176,44 @@ class GridLayout extends BaseLayout {
       this.shadowRoot.insertBefore(bgEl, this.shadowRoot.firstChild);
     }
     
-    // Update styles
+    // Update dynamic styles including header offset
+    bgEl.style.top = `${headerHeight}px`;
     bgEl.style.backgroundImage = `url('${bgImage}')`;
     bgEl.style.filter = `blur(${blur})`;
     bgEl.style.opacity = opacity.toString();
+  }
+
+  _getHeaderHeight(): number {
+    // Try to find the HA header element
+    // Header can be: app-header, .header, hui-view header, etc.
+    
+    // Check if in panel mode (no header)
+    const panelMode = this.closest("hui-panel-view");
+    if (panelMode) return 0;
+    
+    // Try to find app-header
+    let header = document.querySelector("app-header");
+    if (header) {
+      return header.getBoundingClientRect().height;
+    }
+    
+    // Try to find .header class
+    header = document.querySelector(".header");
+    if (header) {
+      return header.getBoundingClientRect().height;
+    }
+    
+    // Try to find ha-app-layout header
+    const appLayout = document.querySelector("ha-app-layout");
+    if (appLayout) {
+      const appHeader = appLayout.querySelector("[slot='header']");
+      if (appHeader) {
+        return appHeader.getBoundingClientRect().height;
+      }
+    }
+    
+    // Default: assume standard header height
+    return 0; // Let CSS variables handle it
   }
 
   _setGridStyles() {
