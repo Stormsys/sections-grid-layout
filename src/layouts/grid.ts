@@ -66,6 +66,13 @@ class GridLayout extends BaseLayout {
           this._evaluateTemplate();
         }
       }
+      
+      // Re-evaluate CSS templates
+      if (this._config.layout?.custom_css && 
+          (this._config.layout.custom_css.includes("{{") || 
+           this._config.layout.custom_css.includes("{%"))) {
+        this._updateStyles();
+      }
     }
     
     // Propagate lovelace updates to native sections
@@ -104,7 +111,22 @@ class GridLayout extends BaseLayout {
     // Setup template subscription for reactive background updates
     this._setupTemplateSubscription();
 
+    // Create style element
     const styleEl = document.createElement("style");
+    styleEl.id = "layout-styles";
+    this.shadowRoot.appendChild(styleEl);
+    
+    // Update styles with template evaluation
+    this._updateStyles();
+  }
+
+  _updateStyles() {
+    const styleEl = this.shadowRoot.querySelector("#layout-styles") as HTMLStyleElement;
+    if (!styleEl) return;
+    
+    // Evaluate templates in custom_css
+    const customCss = this._evaluateCssTemplates(this._config.layout?.custom_css || "");
+    
     styleEl.innerHTML = `
       :host {
         --layout-margin: ${this._config.layout?.margin ?? "0px 4px 0px 4px"};
@@ -114,8 +136,34 @@ class GridLayout extends BaseLayout {
           this._config.layout?.height !== undefined ? "auto" : "visible"
         };
       }
-      ${this._config.layout?.custom_css || ""}`;
-    this.shadowRoot.appendChild(styleEl);
+      ${customCss}`;
+  }
+
+  _evaluateCssTemplates(css: string): string {
+    if (!css || !this.hass) return css;
+    
+    // Don't evaluate if no templates
+    if (!css.includes("{{") && !css.includes("{%")) return css;
+    
+    try {
+      // Replace {{ states('entity_id') }} patterns
+      css = css.replace(/\{\{\s*states\(['"]([^'"]+)['"]\)\s*\}\}/g, (match, entityId) => {
+        const value = this.hass.states[entityId]?.state;
+        return value || match;
+      });
+      
+      // Replace {{ state_attr('entity_id', 'attr') }} patterns
+      css = css.replace(/\{\{\s*state_attr\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"]\)\s*\}\}/g, 
+        (match, entityId, attr) => {
+          const value = this.hass.states[entityId]?.attributes?.[attr];
+          return value !== undefined ? value : match;
+        }
+      );
+      
+      return css;
+    } catch (e) {
+      return css;
+    }
   }
 
 
