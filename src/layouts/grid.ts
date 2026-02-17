@@ -13,6 +13,8 @@ class GridLayout extends BaseLayout {
   _layoutMQs: Array<MediaQueryList | null> = [];
   _config: GridViewConfig;
   _lastBackgroundImage?: string;
+  _lastEvaluatedCss?: string;
+  _trackedEntities: Set<string> = new Set();
 
   async setConfig(config: GridViewConfig) {
     await super.setConfig(config);
@@ -59,19 +61,22 @@ class GridLayout extends BaseLayout {
     if (changedProperties.has("hass")) {
       this._updateSectionsHass();
       
-      // Re-evaluate template for reactive backgrounds
-      if (this._config.layout?.background_image) {
-        const template = this._config.layout.background_image;
-        if (template.includes("{{") || template.includes("{%")) {
-          this._evaluateTemplate();
+      // Only re-evaluate templates if tracked entities changed
+      if (this._hasTrackedEntitiesChanged(changedProperties)) {
+        // Re-evaluate template for reactive backgrounds
+        if (this._config.layout?.background_image) {
+          const template = this._config.layout.background_image;
+          if (template.includes("{{") || template.includes("{%")) {
+            this._evaluateTemplate();
+          }
         }
-      }
-      
-      // Re-evaluate CSS templates
-      if (this._config.layout?.custom_css && 
-          (this._config.layout.custom_css.includes("{{") || 
-           this._config.layout.custom_css.includes("{%"))) {
-        this._updateStyles();
+        
+        // Re-evaluate CSS templates
+        if (this._config.layout?.custom_css && 
+            (this._config.layout.custom_css.includes("{{") || 
+             this._config.layout.custom_css.includes("{%"))) {
+          this._updateStyles();
+        }
       }
     }
     
@@ -108,6 +113,9 @@ class GridLayout extends BaseLayout {
   async firstUpdated() {
     this._setGridStyles();
     
+    // Extract entities from templates for tracking
+    this._extractEntitiesFromTemplates();
+    
     // Setup template subscription for reactive background updates
     this._setupTemplateSubscription();
 
@@ -139,11 +147,61 @@ class GridLayout extends BaseLayout {
       ${customCss}`;
   }
 
+  _hasTrackedEntitiesChanged(changedProperties): boolean {
+    if (!changedProperties.has("hass")) return false;
+    
+    const oldHass = changedProperties.get("hass");
+    if (!oldHass || !this.hass) return true;
+    
+    // Check if any tracked entity state changed
+    for (const entityId of this._trackedEntities) {
+      if (oldHass.states[entityId]?.state !== this.hass.states[entityId]?.state) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  _extractEntitiesFromTemplates() {
+    // Extract entity IDs from templates to track
+    this._trackedEntities.clear();
+    
+    const extractFromString = (str: string) => {
+      if (!str) return;
+      
+      // Extract from is_state()
+      let match;
+      const isStateRegex = /is_state\(['"]([^'"]+)['"]/g;
+      while ((match = isStateRegex.exec(str)) !== null) {
+        this._trackedEntities.add(match[1]);
+      }
+      
+      // Extract from states()
+      const statesRegex = /states\(['"]([^'"]+)['"]/g;
+      while ((match = statesRegex.exec(str)) !== null) {
+        this._trackedEntities.add(match[1]);
+      }
+      
+      // Extract from state_attr()
+      const attrRegex = /state_attr\(['"]([^'"]+)['"]/g;
+      while ((match = attrRegex.exec(str)) !== null) {
+        this._trackedEntities.add(match[1]);
+      }
+    };
+    
+    extractFromString(this._config.layout?.custom_css);
+    extractFromString(this._config.layout?.background_image);
+  }
+
   _evaluateCssTemplates(css: string): string {
     if (!css || !this.hass) return css;
     
     // Don't evaluate if no templates
     if (!css.includes("{{") && !css.includes("{%")) return css;
+    
+    // Don't re-evaluate if nothing changed
+    if (css === this._lastEvaluatedCss) return css;
     
     try {
       let modified = css;
@@ -153,7 +211,10 @@ class GridLayout extends BaseLayout {
         (match, entityId, expectedState, content) => {
           const actualState = this.hass.states[entityId]?.state;
           const matches = actualState === expectedState;
-          console.log(`CSS Template: is_state('${entityId}', '${expectedState}') = ${matches} (actual: ${actualState})`);
+          // Only log if entity exists
+          if (actualState !== undefined) {
+            this._trackedEntities.add(entityId);
+          }
           return matches ? content : '';
         }
       );
@@ -163,7 +224,9 @@ class GridLayout extends BaseLayout {
         (match, entityId, expectedState, content) => {
           const actualState = this.hass.states[entityId]?.state;
           const matches = actualState !== expectedState;
-          console.log(`CSS Template: not is_state('${entityId}', '${expectedState}') = ${matches} (actual: ${actualState})`);
+          if (actualState !== undefined) {
+            this._trackedEntities.add(entityId);
+          }
           return matches ? content : '';
         }
       );
@@ -171,7 +234,9 @@ class GridLayout extends BaseLayout {
       // Replace {{ states('entity_id') }} patterns
       modified = modified.replace(/\{\{\s*states\(['"]([^'"]+)['"]\)\s*\}\}/g, (match, entityId) => {
         const value = this.hass.states[entityId]?.state;
-        console.log(`CSS Template: states('${entityId}') = ${value}`);
+        if (value !== undefined) {
+          this._trackedEntities.add(entityId);
+        }
         return value || match;
       });
       
@@ -179,18 +244,16 @@ class GridLayout extends BaseLayout {
       modified = modified.replace(/\{\{\s*state_attr\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"]\)\s*\}\}/g, 
         (match, entityId, attr) => {
           const value = this.hass.states[entityId]?.attributes?.[attr];
-          console.log(`CSS Template: state_attr('${entityId}', '${attr}') = ${value}`);
+          if (value !== undefined) {
+            this._trackedEntities.add(entityId);
+          }
           return value !== undefined ? value : match;
         }
       );
       
-      if (modified !== css) {
-        console.log("CSS templates evaluated, changes made");
-      }
-      
+      this._lastEvaluatedCss = modified;
       return modified;
     } catch (e) {
-      console.error("CSS template evaluation error:", e);
       return css;
     }
   }
