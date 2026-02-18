@@ -510,8 +510,16 @@ class GridLayout extends BaseLayout {
       // Add visual label in edit mode
       if (isEditMode && sectionConfig.grid_area) {
         const label = document.createElement("div");
-        label.className = "section-grid-label";
+        const isAutoCreated = !this._config.sections?.find(s => s.grid_area === sectionConfig.grid_area);
+        
+        label.className = isAutoCreated ? "section-grid-label auto-created" : "section-grid-label";
         label.textContent = sectionConfig.grid_area;
+        
+        // Add tooltip for auto-created sections
+        if (isAutoCreated) {
+          label.title = "Temporary section - add to YAML to persist";
+        }
+        
         container.appendChild(label);
       }
       
@@ -998,15 +1006,27 @@ class GridLayout extends BaseLayout {
           font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.5px;
-          opacity: 0.8;
+          opacity: 0.4;
           pointer-events: none;
-          z-index: 10;
+          z-index: 1;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          backdrop-filter: blur(4px);
         }
         
         .section-container.edit-mode:hover .section-grid-label {
-          opacity: 1;
-          background: var(--accent-color, #ff9800);
+          opacity: 0.7;
+        }
+        
+        /* Auto-created temporary sections */
+        .section-grid-label.auto-created {
+          background: var(--warning-color, #ff9800);
+          opacity: 0.3;
+          font-style: italic;
+        }
+        
+        .section-grid-label.auto-created::after {
+          content: ' (temp)';
+          font-size: 9px;
         }
         
         /* Empty sections get a placeholder look */
