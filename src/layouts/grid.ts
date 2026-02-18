@@ -669,10 +669,20 @@ class GridLayout extends BaseLayout {
           const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
               if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                // A card was added! Auto-create this section in config
-                this._autoAddSectionToConfig(sectionConfig);
-                observer.disconnect();
-                return;
+                // Check if actual card elements were added (not just wrappers)
+                const hasCardContent = Array.from(mutation.addedNodes).some(
+                  (node: any) => node.tagName === 'HUI-CARD' || 
+                                 node.querySelector?.('hui-card') ||
+                                 node.classList?.contains('card')
+                );
+                
+                if (hasCardContent) {
+                  // A card was added! Auto-create this section in config
+                  console.log(`Auto-saving section '${sectionConfig.grid_area}' to YAML`);
+                  this._autoAddSectionToConfig(sectionConfig);
+                  observer.disconnect();
+                  return;
+                }
               }
             }
           });
@@ -724,9 +734,10 @@ class GridLayout extends BaseLayout {
         };
         
         this.lovelace.saveConfig(newConfig);
+        console.log(`✅ Section '${sectionConfig.grid_area}' saved to YAML and will persist!`);
       }
     } catch (e) {
-      // Silent fail - section will remain auto-created
+      console.error("Failed to auto-save section:", e);
     }
   }
 
