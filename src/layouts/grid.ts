@@ -232,6 +232,38 @@ class GridLayout extends LitElement {
       zoomCss = `#root { zoom: ${layout.zoom}; }`;
     }
 
+    // Generate @media overrides for kiosk and zoom from mediaquery config
+    let mediaCss = "";
+    if (layout?.mediaquery) {
+      for (const [query, overrides] of Object.entries(layout.mediaquery)) {
+        const rules: string[] = [];
+        if (layout.kiosk && (overrides as any).kiosk === false) {
+          rules.push(`
+          #root {
+            position: relative !important;
+            top: auto;
+            bottom: auto;
+            left: auto;
+            right: auto;
+            height: auto;
+            min-height: 100vh;
+            overflow: visible;
+            margin: var(--layout-margin) !important;
+            padding: var(--layout-padding) !important;
+          }
+          #root.edit-mode {
+            top: auto;
+          }`);
+        }
+        if ((overrides as any).zoom != null) {
+          rules.push(`#root { zoom: ${(overrides as any).zoom}; }`);
+        }
+        if (rules.length) {
+          mediaCss += `@media ${query} { ${rules.join("\n")} }`;
+        }
+      }
+    }
+
     styleEl.innerHTML = `
       :host {
         --layout-margin: ${layout?.margin ?? "0px 4px 0px 4px"};
@@ -241,6 +273,7 @@ class GridLayout extends LitElement {
       }
       ${kioskCss}
       ${zoomCss}
+      ${mediaCss}
       ${customCss}`;
   }
 
