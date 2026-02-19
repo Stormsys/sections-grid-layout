@@ -17,7 +17,7 @@ class GridLayout extends BaseLayout {
   _trackedEntities: Set<string> = new Set();
   _sectionsCache: Map<number, any> = new Map();
   _updateQueued: boolean = false;
-  _autoSectionObservers: MutationObserver[] = [];
+  _savingConfig: boolean = false;
 
   async setConfig(config: GridViewConfig) {
     await super.setConfig(config);
@@ -95,10 +95,16 @@ class GridLayout extends BaseLayout {
     if (changedProperties.has("cards")) {
       this._placeCards();
     } else if (changedProperties.has("_editMode")) {
-      // Only re-render when toggling edit mode
-      this._placeCards();
       // Clear section cache when entering/exiting edit mode
       this._sectionsCache.clear();
+      if (this._editMode) {
+        // When entering edit mode, ensure all grid-area sections exist in
+        // lovelace config so hui-section gets correct indices for card ops.
+        // _ensureAllSectionsExistInConfig calls _placeCards after saving.
+        this._ensureAllSectionsExistInConfig();
+      } else {
+        this._placeCards();
+      }
     }
   }
 
@@ -135,10 +141,10 @@ class GridLayout extends BaseLayout {
 
   async firstUpdated() {
     this._setGridStyles();
-    
+
     // Extract entities from templates for tracking
     this._extractEntitiesFromTemplates();
-    
+
     // Setup template subscription for reactive background updates
     this._setupTemplateSubscription();
 
@@ -146,9 +152,14 @@ class GridLayout extends BaseLayout {
     const styleEl = document.createElement("style");
     styleEl.id = "layout-styles";
     this.shadowRoot.appendChild(styleEl);
-    
+
     // Update styles with template evaluation
     this._updateStyles();
+
+    // If we mount while already in edit mode ensure sections exist in config
+    if (this.lovelace?.editMode) {
+      this._ensureAllSectionsExistInConfig();
+    }
   }
 
   _updateStyles() {
@@ -479,20 +490,38 @@ class GridLayout extends BaseLayout {
 
   async _placeNativeSections(root: Element) {
     const isEditMode = this.lovelace?.editMode;
-    
+
     // Auto-detect all grid areas and ensure sections exist for each
     const allGridAreas = this._detectAllGridAreas();
     const sectionsToRender = this._ensureSectionsForAllAreas(allGridAreas);
-    
+
+    // Get the live config sections array so we can look up real indices.
+    // After _ensureAllSectionsExistInConfig the lovelace config is the
+    // source of truth; fall back to this._config.sections if not saved yet.
+    const liveSections: any[] =
+      (this.lovelace?.config?.views?.[this.index]?.sections as any[]) ??
+      this._config.sections ??
+      [];
+
     // Create native hui-section elements positioned in the grid
     for (let i = 0; i < sectionsToRender.length; i++) {
       const sectionConfig = sectionsToRender[i];
-      
+
       // Skip empty sections in normal mode
       if (!isEditMode && (!sectionConfig.cards || sectionConfig.cards.length === 0)) {
         continue;
       }
-      
+
+      // Find the real index of this section in lovelace.config.views[n].sections.
+      // hui-section MUST receive this so HA's [viewIdx, sectionIdx, cardIdx]
+      // path-based card operations target the correct config slot.
+      const configIndex = liveSections.findIndex(
+        (s: any) => s.grid_area === sectionConfig.grid_area
+      );
+      // If not found (shouldn't happen in edit mode after ensure step),
+      // fall back to render order — card operations may not work but view is visible.
+      const sectionIndex = configIndex >= 0 ? configIndex : i;
+
       // Wrap section in container for visual indicators
       const container = document.createElement("div");
       const baseClasses = ["section-container"];
@@ -501,36 +530,28 @@ class GridLayout extends BaseLayout {
         baseClasses.push(`section-${sectionConfig.grid_area}`);
       }
       container.className = baseClasses.join(" ");
-      
+
       // Apply grid positioning to container
       if (sectionConfig.grid_area) {
         container.style.gridArea = sectionConfig.grid_area;
         container.setAttribute("data-grid-area", sectionConfig.grid_area);
       }
-      
+
       // Add visual label in edit mode
       if (isEditMode && sectionConfig.grid_area) {
         const label = document.createElement("div");
-        const isAutoCreated = !this._config.sections?.find(s => s.grid_area === sectionConfig.grid_area);
-        
-        label.className = isAutoCreated ? "section-grid-label auto-created" : "section-grid-label";
+        label.className = "section-grid-label";
         label.textContent = sectionConfig.grid_area;
-        
-        // Add tooltip for auto-created sections
-        if (isAutoCreated) {
-          label.title = "Temporary section - add to YAML to persist";
-        }
-        
         container.appendChild(label);
       }
-      
-      // Create native section element
-      const sectionEl = await this._createNativeSection(sectionConfig, i);
+
+      // Create native section element with the real config index
+      const sectionEl = await this._createNativeSection(sectionConfig, sectionIndex);
       container.appendChild(sectionEl);
-      
+
       root.appendChild(container);
     }
-    
+
     // Add loose cards container in edit mode (cards not in any section)
     if (isEditMode && this.cards && this.cards.length > 0) {
       const looseCardsContainer = this._createLooseCardsContainer();
@@ -635,121 +656,113 @@ class GridLayout extends BaseLayout {
     return container;
   }
 
-  async _createNativeSection(config: any, index: number) {
-    // Load section element creator if not loaded
+  async _createNativeSection(config: any, configIndex: number) {
     if (!customElements.get("hui-section")) {
-      // Wait for it to be defined
       await customElements.whenDefined("hui-section");
     }
-    
-    // Create the native section element
+
     const section: any = document.createElement("hui-section");
     section.hass = this.hass;
     section.lovelace = this.lovelace;
     section.viewIndex = this.index;
-    section.index = index;
+    // CRITICAL: must match position in lovelace.config.views[viewIndex].sections
+    section.index = configIndex;
     section.config = config;
-    
-    // Check if this is an auto-created section (only wire up auto-save in edit mode)
-    const isAutoCreated = !this._config.sections?.find(s => s.grid_area === config.grid_area);
 
-    if (isAutoCreated && config.grid_area && this.lovelace?.editMode) {
-      this._setupAutoSectionCreation(section, config);
-    }
-    
+    // Listen for config-changed (e.g. title / column_span edits in the section header)
+    section.addEventListener("config-changed", (e: CustomEvent) => {
+      e.stopPropagation();
+      this._handleSectionConfigChanged(config.grid_area, e.detail.config);
+    });
+
+    // Listen for section deletion requests
+    section.addEventListener("ll-delete-section", (e: CustomEvent) => {
+      e.stopPropagation();
+      this._handleDeleteSection(config.grid_area);
+    });
+
     return section;
   }
 
-  _setupAutoSectionCreation(section: any, sectionConfig: any) {
-    // hui-section renders its content in shadow DOM — we must observe shadowRoot.
-    // Poll up to 50 times (5 s) for the shadow root to be ready, then give up.
-    let attempts = 0;
-    const MAX_ATTEMPTS = 50;
-
-    const checkForCards = () => {
-      if (attempts++ >= MAX_ATTEMPTS) return; // never retry indefinitely
-
-      setTimeout(() => {
-        // Prefer shadow-root lookup; fall back to direct querySelector for
-        // custom implementations that don't use shadow DOM.
-        const root: ShadowRoot | Element = section.shadowRoot ?? section;
-        const gridSection: Element | null =
-          root.querySelector('hui-grid-section') ??
-          section.querySelector('hui-grid-section');
-
-        if (gridSection) {
-          const observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-              if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                const hasCardContent = Array.from(mutation.addedNodes).some(
-                  (node: any) =>
-                    node.tagName === 'HUI-CARD' ||
-                    node.querySelector?.('hui-card') ||
-                    node.classList?.contains('card')
-                );
-
-                if (hasCardContent) {
-                  this._autoAddSectionToConfig(sectionConfig);
-                  observer.disconnect();
-                  this._autoSectionObservers = this._autoSectionObservers.filter(o => o !== observer);
-                  return;
-                }
-              }
-            }
-          });
-
-          this._autoSectionObservers.push(observer);
-          observer.observe(gridSection, { childList: true, subtree: true });
-        } else {
-          checkForCards();
-        }
-      }, 100);
-    };
-
-    checkForCards();
+  _handleSectionConfigChanged(gridArea: string, newSectionConfig: any) {
+    if (!this.lovelace || this._savingConfig) return;
+    const viewConfig = this.lovelace.config.views[this.index];
+    const sections = [...((viewConfig.sections as any[]) || [])];
+    const idx = sections.findIndex((s: any) => s.grid_area === gridArea);
+    const updated = { ...newSectionConfig, grid_area: gridArea };
+    if (idx >= 0) {
+      sections[idx] = updated;
+    } else {
+      sections.push(updated);
+    }
+    this._saveViewSections(sections);
   }
 
-  _autoAddSectionToConfig(sectionConfig: any) {
-    if (!this.lovelace) return;
-    
+  _handleDeleteSection(gridArea: string) {
+    if (!this.lovelace || this._savingConfig) return;
+    const viewConfig = this.lovelace.config.views[this.index];
+    const sections = ((viewConfig.sections as any[]) || []).filter(
+      (s: any) => s.grid_area !== gridArea
+    );
+    this._saveViewSections(sections);
+  }
+
+  async _ensureAllSectionsExistInConfig() {
+    if (!this.lovelace || this._savingConfig) {
+      this._placeCards();
+      return;
+    }
+
+    const allGridAreas = this._detectAllGridAreas();
+    if (allGridAreas.length === 0) {
+      this._placeCards();
+      return;
+    }
+
+    const viewConfig = this.lovelace.config.views[this.index];
+    const existing: any[] = (viewConfig.sections as any[]) || [];
+    const existingAreas = new Set(existing.map((s: any) => s.grid_area).filter(Boolean));
+
+    const toAdd = allGridAreas.filter((area) => !existingAreas.has(area));
+    if (toAdd.length === 0) {
+      this._placeCards();
+      return;
+    }
+
+    // Build new sections list preserving existing order, appending missing ones
+    const newSections = [
+      ...existing,
+      ...toAdd.map((area) => ({
+        type: "grid",
+        title: this._formatAreaName(area),
+        grid_area: area,
+        cards: [],
+      })),
+    ];
+
+    await this._saveViewSections(newSections);
+    // _placeCards will be called once the config update propagates back via setConfig/updated
+  }
+
+  async _saveViewSections(sections: any[]) {
+    if (!this.lovelace || this._savingConfig) return;
+    this._savingConfig = true;
     try {
-      // Get current view config
       const viewConfig = this.lovelace.config.views[this.index];
-      
-      // Add section to config if it doesn't exist
-      const sections = [...(viewConfig.sections || [])];
-      const exists = sections.find(s => s.grid_area === sectionConfig.grid_area);
-      
-      if (!exists) {
-        // Add the new section
-        sections.push({
-          type: sectionConfig.type || 'grid',
-          title: sectionConfig.title,
-          grid_area: sectionConfig.grid_area,
-          cards: []
-        });
-        
-        // Update view config
-        const newViewConfig = {
-          ...viewConfig,
-          sections: sections
-        };
-        
-        // Save to lovelace config
-        const newConfig = {
-          ...this.lovelace.config,
-          views: [
-            ...this.lovelace.config.views.slice(0, this.index),
-            newViewConfig,
-            ...this.lovelace.config.views.slice(this.index + 1)
-          ]
-        };
-        
-        this.lovelace.saveConfig(newConfig);
-        console.log(`✅ Section '${sectionConfig.grid_area}' saved to YAML and will persist!`);
-      }
+      const newViewConfig = { ...viewConfig, sections };
+      const newConfig = {
+        ...this.lovelace.config,
+        views: [
+          ...this.lovelace.config.views.slice(0, this.index),
+          newViewConfig,
+          ...this.lovelace.config.views.slice(this.index + 1),
+        ],
+      };
+      await this.lovelace.saveConfig(newConfig);
     } catch (e) {
-      console.error("Failed to auto-save section:", e);
+      console.error("layout-card-improved: failed to save section config", e);
+    } finally {
+      this._savingConfig = false;
     }
   }
 
@@ -961,10 +974,6 @@ class GridLayout extends BaseLayout {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    for (const observer of this._autoSectionObservers) {
-      observer.disconnect();
-    }
-    this._autoSectionObservers = [];
   }
 
   static get styles() {
