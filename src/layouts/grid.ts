@@ -269,7 +269,6 @@ class GridLayout extends LitElement {
           }
           .section-container {
             height: auto;
-            overflow: visible;
           }
         }`;
     }
@@ -725,6 +724,10 @@ class GridLayout extends LitElement {
         const label = document.createElement("div");
         label.className = "section-grid-label";
         label.textContent = sectionConfig.grid_area;
+        label.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._openSectionYamlEditor(sectionConfig.grid_area);
+        });
         container.appendChild(label);
       }
 
@@ -864,6 +867,109 @@ class GridLayout extends LitElement {
     }
   }
 
+  // ── Section YAML editor ──────────────────────────────────────────────────
+
+  _sectionConfigToYaml(config: any): string {
+    const SKIP = new Set(["type", "cards", "grid_area"]);
+    const lines: string[] = [];
+    for (const [key, value] of Object.entries(config)) {
+      if (SKIP.has(key)) continue;
+      if (value === undefined || value === null) continue;
+      if (typeof value === "object") continue;
+      lines.push(`${key}: ${typeof value === "string" && value.includes(":") ? `"${value}"` : value}`);
+    }
+    return lines.join("\n");
+  }
+
+  _yamlToSectionConfig(yaml: string): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const line of yaml.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const colonIdx = trimmed.indexOf(":");
+      if (colonIdx < 0) continue;
+      const key = trimmed.slice(0, colonIdx).trim();
+      let val: any = trimmed.slice(colonIdx + 1).trim();
+      // Strip surrounding quotes
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      } else if (val === "true") {
+        val = true;
+      } else if (val === "false") {
+        val = false;
+      } else if (val !== "" && !isNaN(Number(val))) {
+        val = Number(val);
+      }
+      result[key] = val;
+    }
+    return result;
+  }
+
+  _openSectionYamlEditor(gridArea: string) {
+    // Remove any existing editor
+    this.shadowRoot.querySelector(".sgl-yaml-editor")?.remove();
+
+    const liveSections: any[] =
+      (this.lovelace?.config?.views?.[this.index]?.sections as any[]) ?? [];
+    const sectionConfig = liveSections.find((s: any) => s.grid_area === gridArea) || {};
+    const yaml = this._sectionConfigToYaml(sectionConfig);
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "sgl-yaml-editor";
+
+    const dialog = document.createElement("div");
+    dialog.className = "sgl-yaml-dialog";
+
+    const header = document.createElement("div");
+    header.className = "sgl-yaml-header";
+    header.textContent = gridArea;
+
+    const textarea = document.createElement("textarea");
+    textarea.className = "sgl-yaml-textarea";
+    textarea.value = yaml;
+    textarea.spellcheck = false;
+
+    const actions = document.createElement("div");
+    actions.className = "sgl-yaml-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "sgl-yaml-btn sgl-yaml-btn-cancel";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", () => backdrop.remove());
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "sgl-yaml-btn sgl-yaml-btn-save";
+    saveBtn.textContent = "Save";
+    saveBtn.addEventListener("click", () => {
+      const parsed = this._yamlToSectionConfig(textarea.value);
+      const merged = {
+        ...sectionConfig,
+        ...parsed,
+        type: sectionConfig.type || "grid",
+        grid_area: gridArea,
+        cards: sectionConfig.cards || [],
+      };
+      // Remove keys that were deleted from the YAML
+      for (const key of Object.keys(sectionConfig)) {
+        if (key === "type" || key === "cards" || key === "grid_area") continue;
+        if (!(key in parsed)) delete merged[key];
+      }
+      this._handleSectionConfigChanged(gridArea, merged);
+      backdrop.remove();
+    });
+
+    actions.append(cancelBtn, saveBtn);
+    dialog.append(header, textarea, actions);
+    backdrop.appendChild(dialog);
+
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) backdrop.remove();
+    });
+
+    this.shadowRoot.appendChild(backdrop);
+    textarea.focus();
+  }
+
   // ── FAB (Add card) ──────────────────────────────────────────────────────
 
   _addCard() {
@@ -954,10 +1060,14 @@ class GridLayout extends LitElement {
         text-transform: uppercase;
         letter-spacing: 0.5px;
         opacity: 0.4;
-        pointer-events: none;
+        cursor: pointer;
         z-index: 1;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         backdrop-filter: blur(4px);
+        transition: opacity 0.15s;
+      }
+      .section-grid-label:hover {
+        opacity: 0.9;
       }
       .section-container.edit-mode:hover .section-grid-label {
         opacity: 0.7;
@@ -1009,6 +1119,81 @@ class GridLayout extends LitElement {
       }
       .loose-cards-wrapper > * {
         margin: 0;
+      }
+
+      /* ── Section YAML editor ──────────────────────────────────────── */
+
+      .sgl-yaml-editor {
+        position: fixed;
+        inset: 0;
+        z-index: 10001;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(4px);
+      }
+      .sgl-yaml-dialog {
+        background: var(--card-background-color, #1c1c1c);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 16px;
+        min-width: 340px;
+        max-width: 480px;
+        width: 90vw;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        font-family: var(--paper-font-body1_-_font-family, sans-serif);
+      }
+      .sgl-yaml-header {
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--primary-color, #03a9f4);
+        margin-bottom: 12px;
+      }
+      .sgl-yaml-textarea {
+        width: 100%;
+        min-height: 200px;
+        background: rgba(0, 0, 0, 0.2);
+        color: var(--primary-text-color, #fff);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 12px;
+        font-family: "Roboto Mono", "SFMono-Regular", monospace;
+        font-size: 13px;
+        line-height: 1.5;
+        resize: vertical;
+        box-sizing: border-box;
+        tab-size: 2;
+      }
+      .sgl-yaml-textarea:focus {
+        outline: none;
+        border-color: var(--primary-color, #03a9f4);
+      }
+      .sgl-yaml-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .sgl-yaml-btn {
+        border: none;
+        border-radius: 6px;
+        padding: 6px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      .sgl-yaml-btn:hover { opacity: 0.85; }
+      .sgl-yaml-btn-cancel {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--primary-text-color, #fff);
+      }
+      .sgl-yaml-btn-save {
+        background: var(--primary-color, #03a9f4);
+        color: white;
       }
 
       /* ── Overlays ─────────────────────────────────────────────────── */
