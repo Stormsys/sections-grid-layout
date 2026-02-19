@@ -129,11 +129,19 @@ class GridLayout extends BaseLayout {
   }
 
   _updateSectionsLovelace() {
-    // Update lovelace on all native section elements  
-    const sections = this.shadowRoot.querySelectorAll("hui-section");
-    sections.forEach((section: any) => {
-      if (section) {
-        section.lovelace = this.lovelace;
+    // Native sections-view keeps section.config in sync via Lit binding on
+    // every render; we must do it manually whenever lovelace changes so
+    // hui-section always renders the current card list (not a stale snapshot).
+    const liveSections: any[] =
+      (this.lovelace?.config?.views?.[this.index]?.sections as any[]) ?? [];
+
+    this.shadowRoot.querySelectorAll("hui-section").forEach((section: any) => {
+      section.lovelace = this.lovelace;
+      if (section.config?.grid_area) {
+        const fresh = liveSections.find(
+          (s: any) => s.grid_area === section.config.grid_area
+        );
+        if (fresh) section.config = fresh;
       }
     });
   }
@@ -765,204 +773,12 @@ class GridLayout extends BaseLayout {
     }
   }
 
-  _autoDetectSections() {
-    // Auto-detect grid areas from grid-template-areas
-    // Always detect if grid-template-areas is defined, not just in edit mode
-    const gridTemplateAreas = this._config.layout?.["grid-template-areas"];
-    if (!gridTemplateAreas) return null;
-    
-    // Parse grid-template-areas to extract unique area names
-    const areaNames = new Set<string>();
-    const lines = gridTemplateAreas.split('\n').map(line => line.trim()).filter(line => line);
-    
-    for (const line of lines) {
-      const areas = line.replace(/['"]/g, '').split(/\s+/);
-      areas.forEach(area => {
-        if (area !== '.' && area !== '') {
-          areaNames.add(area);
-        }
-      });
-    }
-    
-    // Create section configs for each detected area - no longer need manual config!
-    const sections: Record<string, any> = {};
-    areaNames.forEach(name => {
-      sections[name] = { grid_area: name };
-    });
-    
-    return Object.keys(sections).length > 0 ? sections : null;
-  }
 
-  _placeSectionCards(root: Element, sections?: Record<string, any>) {
-    // Create section containers
-    sections = sections || this._config.layout?.sections || {};
-    const isEditMode = this.lovelace?.editMode;
-    
-    // Track which cards have been assigned to sections
-    const assignedCardIndices = new Set<number>();
-    
-    for (const [sectionName, sectionConfig] of Object.entries(sections)) {
-      const sectionEl = document.createElement("div");
-      sectionEl.className = isEditMode ? "grid-section edit-mode" : "grid-section";
-      sectionEl.setAttribute("data-section", sectionName);
-      
-      // Apply grid area if specified
-      if (sectionConfig.grid_area) {
-        sectionEl.style.gridArea = sectionConfig.grid_area;
-      }
-      
-      // Add section header in edit mode
-      if (isEditMode) {
-        const headerEl = this._createSectionHeader(sectionName);
-        sectionEl.appendChild(headerEl);
-      }
-      
-      // Add cards to this section
-      const sectionCards = this._getSectionCards(sectionName);
-      sectionCards.forEach(cardGroup => {
-        assignedCardIndices.add(cardGroup.index);
-        const el = this.getCardElement(cardGroup);
-        sectionEl.appendChild(el);
-      });
-      
-      // Show empty placeholder in edit mode
-      if (isEditMode && sectionCards.length === 0) {
-        const placeholderEl = document.createElement("div");
-        placeholderEl.className = "section-placeholder";
-        placeholderEl.textContent = "Click + to add cards, or edit cards to set view_layout.grid_area";
-        sectionEl.appendChild(placeholderEl);
-      }
-      
-      root.appendChild(sectionEl);
-    }
-    
-    // Add unassigned cards section in edit mode
-    if (isEditMode) {
-      const unassignedCards = this._getUnassignedCards(assignedCardIndices);
-      if (unassignedCards.length > 0) {
-        const unassignedSection = this._createUnassignedSection(unassignedCards);
-        root.appendChild(unassignedSection);
-      }
-    }
-  }
-
-  _createSectionHeader(sectionName: string): HTMLElement {
-    const headerEl = document.createElement("div");
-    headerEl.className = "section-header";
-    
-    const titleEl = document.createElement("span");
-    titleEl.className = "section-title";
-    titleEl.textContent = sectionName;
-    
-    const addBtn = document.createElement("button");
-    addBtn.className = "section-add-btn";
-    addBtn.innerHTML = "✕";
-    addBtn.title = `Add card to ${sectionName}`;
-    addBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      await this._addCardToSection(sectionName);
-    });
-    
-    headerEl.appendChild(titleEl);
-    headerEl.appendChild(addBtn);
-    
-    return headerEl;
-  }
-
-  async _addCardToSection(sectionName: string) {
-    // Show the card picker and automatically set grid_area when card is added
-    const cardHelpers = await (window as any).loadCardHelpers?.();
-    if (!cardHelpers) return;
-    
-    // Create a custom event that includes the target section
-    const event = new CustomEvent("ll-create-card");
-    this.dispatchEvent(event);
-    
-    // Listen for the next card addition and auto-assign grid_area
-    const handleCardAdded = (e: any) => {
-      if (e.detail?.config) {
-        // Auto-assign the grid_area to the new card
-        if (!e.detail.config.view_layout) {
-          e.detail.config.view_layout = {};
-        }
-        e.detail.config.view_layout.grid_area = sectionName;
-        console.log(`Auto-assigned card to section: ${sectionName}`);
-      }
-      this.removeEventListener("card-added", handleCardAdded);
-    };
-    
-    // Note: This is a simplified approach. Full implementation would need
-    // to intercept the card creation dialog and modify the config before save
-    this.addEventListener("card-added", handleCardAdded);
-  }
-
-  _getUnassignedCards(assignedIndices: Set<number>): CardConfigGroup[] {
-    const cards: CardConfigGroup[] = [];
-    this.cards.forEach((card, index) => {
-      if (!assignedIndices.has(index)) {
-        const config = this._config.cards[index];
-        cards.push({
-          card,
-          config,
-          index,
-          show: this._shouldShow(card, config, index),
-        });
-      }
-    });
-    return cards.filter((c) => this.lovelace?.editMode || c.show);
-  }
-
-  _createUnassignedSection(unassignedCards: CardConfigGroup[]): HTMLElement {
-    const sectionEl = document.createElement("div");
-    sectionEl.className = "grid-section unassigned-section edit-mode";
-    sectionEl.setAttribute("data-section", "unassigned");
-    
-    // Header for unassigned section
-    const headerEl = document.createElement("div");
-    headerEl.className = "section-header unassigned-header";
-    
-    const titleEl = document.createElement("span");
-    titleEl.className = "section-title";
-    titleEl.textContent = "Unassigned Cards";
-    
-    const infoEl = document.createElement("span");
-    infoEl.className = "section-info";
-    infoEl.textContent = "(Drag into sections above)";
-    
-    headerEl.appendChild(titleEl);
-    headerEl.appendChild(infoEl);
-    sectionEl.appendChild(headerEl);
-    
-    // Add unassigned cards
-    for (const cardGroup of unassignedCards) {
-      const el = this.getCardElement(cardGroup);
-      sectionEl.appendChild(el);
-    }
-    
-    return sectionEl;
-  }
-
-  _getSectionCards(sectionName: string): CardConfigGroup[] {
-    const sectionConfig = this._config.layout?.sections?.[sectionName];
-    if (!sectionConfig) return [];
-    
-    const cards: CardConfigGroup[] = [];
-    this.cards.forEach((card, index) => {
-      const config = this._config.cards[index];
-      // Check if card belongs to this section
-      const gridArea = (config.view_layout as any)?.grid_area;
-      if (gridArea === sectionName || 
-          (sectionConfig.cards && sectionConfig.cards.includes(config))) {
-        cards.push({
-          card,
-          config,
-          index,
-          show: this._shouldShow(card, config, index),
-        });
-      }
-    });
-    
-    return cards.filter((c) => this.lovelace?.editMode || c.show);
+  _render_fab() {
+    // In sections mode hui-section provides its own per-section "Add card"
+    // buttons, so the view-level FAB would only add orphan view-level cards.
+    if (this._config?.sections?.length) return html``;
+    return super._render_fab();
   }
 
   render() {
@@ -994,101 +810,7 @@ class GridLayout extends BaseLayout {
           min-height: 0;
           overflow-y: var(--layout-overflow);
         }
-        #root > *:not(.unassigned-section) {
-          margin: var(--masonry-view-card-margin, 4px 4px 8px);
-        }
-        .grid-section {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .grid-section.edit-mode {
-          padding: 8px;
-          min-height: 100px;
-          border: 2px dashed var(--divider-color, #e0e0e0);
-          border-radius: 8px;
-          background: var(--card-background-color, #fff);
-          transition: all 0.3s ease;
-        }
-        .grid-section.edit-mode:hover {
-          border-color: var(--primary-color, #03a9f4);
-          background: var(--secondary-background-color, #f5f5f5);
-        }
-        .section-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-weight: 600;
-          font-size: 14px;
-          color: white;
-          padding: 8px 12px;
-          background: var(--primary-color, #03a9f4);
-          border-radius: 4px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          gap: 8px;
-        }
-        .section-title {
-          flex: 1;
-        }
-        .section-add-btn {
-          background: rgba(255, 255, 255, 0.2);
-          border: 1px solid rgba(255, 255, 255, 0.3);
-          color: white;
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          font-weight: bold;
-          transition: all 0.2s ease;
-          transform: rotate(45deg);
-          padding: 0;
-          line-height: 1;
-        }
-        .section-add-btn:hover {
-          background: rgba(255, 255, 255, 0.3);
-          transform: rotate(45deg) scale(1.1);
-        }
-        .section-add-btn:active {
-          transform: rotate(45deg) scale(0.95);
-        }
-        .unassigned-section {
-          grid-column: 1 / -1;
-          margin-top: 16px;
-          border-color: var(--warning-color, #ff9800);
-          background: var(--secondary-background-color, #fafafa);
-        }
-        .unassigned-header {
-          background: var(--warning-color, #ff9800);
-          flex-wrap: wrap;
-        }
-        .section-info {
-          font-size: 11px;
-          opacity: 0.9;
-          text-transform: none;
-          font-weight: normal;
-          letter-spacing: normal;
-        }
-        .section-placeholder {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 80px;
-          border: 2px dashed var(--disabled-text-color, #9e9e9e);
-          border-radius: 4px;
-          color: var(--secondary-text-color, #727272);
-          font-style: italic;
-          background: var(--divider-color, #e0e0e0);
-          opacity: 0.6;
-        }
-        .grid-section > *:not(.section-header):not(.section-placeholder) {
-          margin: 0;
-        }
-        .grid-section:not(.edit-mode) > * {
+        #root > *:not(.loose-cards-container) {
           margin: var(--masonry-view-card-margin, 4px 4px 8px);
         }
         
@@ -1133,18 +855,6 @@ class GridLayout extends BaseLayout {
         
         .section-container.edit-mode:hover .section-grid-label {
           opacity: 0.7;
-        }
-        
-        /* Auto-created temporary sections */
-        .section-grid-label.auto-created {
-          background: var(--warning-color, #ff9800);
-          opacity: 0.3;
-          font-style: italic;
-        }
-        
-        .section-grid-label.auto-created::after {
-          content: ' (temp)';
-          font-size: 9px;
         }
         
         /* Empty sections get a placeholder look */
