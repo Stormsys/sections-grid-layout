@@ -110,11 +110,15 @@ class GridLayout extends LitElement {
 
     if (changedProperties.has("lovelace")) this._updateSectionsLovelace();
 
+    if (changedProperties.has("_editMode")) {
+      this._createOverlays(); // recreate overlays to show/hide tester panel
+    }
+
     if (changedProperties.has("cards")) {
+      this._sectionsCache.clear();
       this._placeCards();
     } else if (changedProperties.has("_editMode")) {
       this._sectionsCache.clear();
-      this._createOverlays(); // recreate overlays to show/hide tester panel
       if (this._editMode) {
         this._ensureAllSectionsExistInConfig();
       } else {
