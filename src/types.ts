@@ -31,6 +31,21 @@ export interface CardConfigGroup {
   show?: boolean;
 }
 
+export interface OverlayConfig {
+  entity: string;
+  state?: string;
+  content?: string;
+  color?: string;
+  background?: string;
+  animation?: "pulse" | "fade" | "flash" | "slide-up" | "none" | string;
+  duration?: string;
+  backdrop_blur?: string;
+  font_size?: string;
+  text_shadow?: string;
+  custom_css?: string;
+  z_index?: number;
+}
+
 export interface SectionConfig {
   type: string;
   title?: string;
@@ -60,6 +75,7 @@ export interface GridViewConfig {
     background_image?: string;
     background_blur?: string;
     background_opacity?: number;
+    overlays?: OverlayConfig[];
     "grid-template-areas"?: string;
     [key: string]: any;
   };

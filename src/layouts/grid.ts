@@ -6,6 +6,7 @@ import {
   GridViewConfig,
   HuiCard,
   LovelaceCard,
+  OverlayConfig,
 } from "../types";
 
 class GridLayout extends LitElement {
@@ -27,6 +28,8 @@ class GridLayout extends LitElement {
   _sectionsCache: Map<number, any> = new Map();
   _updateQueued: boolean = false;
   _savingConfig: boolean = false;
+  _overlayStates: Map<number, boolean> = new Map();
+  _rendered: boolean = false;
 
   // Stable bound handlers so addEventListener/removeEventListener match
   _onCardMQChange = () => this._placeCards();
@@ -67,6 +70,11 @@ class GridLayout extends LitElement {
     }
 
     this._setGridStyles();
+
+    if (this._rendered) {
+      this._createOverlays();
+      this._updateOverlayStates();
+    }
   }
 
   async updated(changedProperties: Map<string, any>) {
@@ -96,6 +104,7 @@ class GridLayout extends LitElement {
             (layout.custom_css.includes("{{") || layout.custom_css.includes("{%"))) {
           this._updateStyles();
         }
+        this._updateOverlayStates();
       }
     }
 
@@ -105,6 +114,7 @@ class GridLayout extends LitElement {
       this._placeCards();
     } else if (changedProperties.has("_editMode")) {
       this._sectionsCache.clear();
+      this._createOverlays(); // recreate overlays to show/hide tester panel
       if (this._editMode) {
         this._ensureAllSectionsExistInConfig();
       } else {
@@ -114,6 +124,7 @@ class GridLayout extends LitElement {
   }
 
   async firstUpdated() {
+    this._rendered = true;
     this._setGridStyles();
     this._extractEntitiesFromTemplates();
     this._setupTemplateSubscription();
@@ -123,6 +134,9 @@ class GridLayout extends LitElement {
     this.shadowRoot.appendChild(styleEl);
     this._updateStyles();
 
+    this._createOverlays();
+    if (this.hass) this._updateOverlayStates();
+
     if (this.lovelace?.editMode) this._ensureAllSectionsExistInConfig();
   }
 
@@ -130,6 +144,7 @@ class GridLayout extends LitElement {
     super.disconnectedCallback();
     this._mediaQueries.forEach(mq => mq?.removeEventListener("change", this._onCardMQChange));
     this._layoutMQs.forEach(mq => mq?.removeEventListener("change", this._onLayoutMQChange));
+    this._overlayStates.clear();
   }
 
   // ── Card helpers (used for view-level loose cards) ────────────────────────
@@ -264,6 +279,16 @@ class GridLayout extends LitElement {
       }
     }
 
+    let overlayCss = "";
+    const overlays = this._config?.layout?.overlays;
+    if (overlays) {
+      for (const overlay of overlays) {
+        if (overlay.custom_css) {
+          overlayCss += this._evaluateCssTemplates(overlay.custom_css);
+        }
+      }
+    }
+
     styleEl.innerHTML = `
       :host {
         --layout-margin: ${layout?.margin ?? "0px 4px 0px 4px"};
@@ -274,7 +299,8 @@ class GridLayout extends LitElement {
       ${kioskCss}
       ${zoomCss}
       ${mediaCss}
-      ${customCss}`;
+      ${customCss}
+      ${overlayCss}`;
   }
 
   // ── Template evaluation ──────────────────────────────────────────────────
@@ -304,6 +330,14 @@ class GridLayout extends LitElement {
     };
     extract(this._config.layout?.custom_css);
     extract(this._config.layout?.background_image);
+    const overlays = this._config.layout?.overlays;
+    if (overlays) {
+      for (const overlay of overlays) {
+        if (overlay.entity) this._trackedEntities.add(overlay.entity);
+        extract(overlay.custom_css);
+        extract(overlay.content);
+      }
+    }
   }
 
   _evaluateCssTemplates(css: string): string {
@@ -342,6 +376,147 @@ class GridLayout extends LitElement {
     } catch {
       return css;
     }
+  }
+
+  // ── Overlays ─────────────────────────────────────────────────────────
+
+  _createOverlays() {
+    this.shadowRoot.querySelectorAll(".sgl-overlay").forEach(el => el.remove());
+    this.shadowRoot.querySelectorAll(".sgl-overlay-tester").forEach(el => el.remove());
+    this._overlayStates.clear();
+
+    const overlays = this._config?.layout?.overlays;
+    if (!overlays?.length) return;
+
+    for (let i = 0; i < overlays.length; i++) {
+      const cfg = overlays[i];
+
+      const el = document.createElement("div");
+      el.className = "sgl-overlay";
+      el.setAttribute("data-overlay-index", String(i));
+      el.setAttribute("data-animation", cfg.animation ?? "pulse");
+
+      // CSS variables for animation customisation
+      if (cfg.color) el.style.setProperty("--sgl-overlay-color", cfg.color);
+      if (cfg.duration) el.style.setProperty("--sgl-overlay-duration", cfg.duration);
+      if (cfg.backdrop_blur) el.style.setProperty("--sgl-overlay-blur", cfg.backdrop_blur);
+      if (cfg.font_size) el.style.setProperty("--sgl-overlay-font-size", cfg.font_size);
+      if (cfg.z_index != null) el.style.setProperty("--sgl-overlay-z-index", String(cfg.z_index));
+      if (cfg.background) el.style.background = cfg.background;
+
+      const contentEl = document.createElement("div");
+      contentEl.className = "sgl-overlay-content";
+      if (cfg.text_shadow) contentEl.style.textShadow = cfg.text_shadow;
+      el.appendChild(contentEl);
+
+      this.shadowRoot.appendChild(el);
+    }
+
+    // Edit mode: show test panel
+    if (this.lovelace?.editMode) this._createOverlayTester(overlays);
+  }
+
+  _createOverlayTester(overlays: OverlayConfig[]) {
+    const tester = document.createElement("div");
+    tester.className = "sgl-overlay-tester";
+
+    const title = document.createElement("div");
+    title.className = "sgl-overlay-tester-title";
+    title.textContent = "Overlays";
+    tester.appendChild(title);
+
+    for (let i = 0; i < overlays.length; i++) {
+      const cfg = overlays[i];
+      const row = document.createElement("div");
+      row.className = "sgl-overlay-tester-row";
+
+      const label = document.createElement("span");
+      label.className = "sgl-overlay-tester-label";
+      label.textContent = `${cfg.content || "overlay"} — ${cfg.entity}`;
+
+      const btn = document.createElement("button");
+      btn.className = "sgl-overlay-tester-btn";
+      btn.textContent = "Test";
+      btn.addEventListener("click", () => this._testOverlay(i));
+
+      row.append(label, btn);
+      tester.appendChild(row);
+    }
+
+    this.shadowRoot.appendChild(tester);
+  }
+
+  _testOverlay(index: number) {
+    const el = this.shadowRoot.querySelector(
+      `.sgl-overlay[data-overlay-index="${index}"]`
+    ) as HTMLElement;
+    if (!el) return;
+
+    // Update content before testing
+    const cfg = this._config?.layout?.overlays?.[index];
+    if (cfg?.content) {
+      const contentEl = el.querySelector(".sgl-overlay-content") as HTMLElement;
+      if (contentEl) contentEl.textContent = this._evaluateOverlayContent(cfg.content);
+    }
+
+    el.classList.remove("active");
+    void el.offsetWidth; // force reflow to restart animation
+    el.classList.add("active");
+
+    // Auto-remove active class after animation ends
+    const duration = parseFloat(cfg?.duration || "3") * 1000;
+    setTimeout(() => el.classList.remove("active"), duration + 100);
+  }
+
+  _updateOverlayStates() {
+    const overlays = this._config?.layout?.overlays;
+    if (!overlays?.length || !this.hass) return;
+
+    for (let i = 0; i < overlays.length; i++) {
+      const cfg = overlays[i];
+      const targetState = cfg.state ?? "on";
+      const currentState = this.hass.states[cfg.entity]?.state;
+      const isActive = currentState === targetState;
+      const wasActive = this._overlayStates.get(i) ?? false;
+
+      const el = this.shadowRoot.querySelector(
+        `.sgl-overlay[data-overlay-index="${i}"]`
+      ) as HTMLElement;
+      if (!el) continue;
+
+      // Update content (may have Jinja templates)
+      const contentEl = el.querySelector(".sgl-overlay-content") as HTMLElement;
+      if (contentEl && cfg.content) {
+        contentEl.textContent = this._evaluateOverlayContent(cfg.content);
+      }
+
+      if (isActive && !wasActive) {
+        el.classList.remove("active");
+        void el.offsetWidth; // force reflow to restart animation
+        el.classList.add("active");
+      } else if (!isActive && wasActive) {
+        el.classList.remove("active");
+      }
+
+      this._overlayStates.set(i, isActive);
+    }
+  }
+
+  _evaluateOverlayContent(content: string): string {
+    if (!content || !this.hass) return content || "";
+    if (!content.includes("{{")) return content;
+    let out = content;
+    out = out.replace(/\{\{\s*states\(['"]([^'"]+)['"]\)\s*\}\}/g, (m, eid) => {
+      return this.hass.states[eid]?.state ?? m;
+    });
+    out = out.replace(
+      /\{\{\s*state_attr\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"]\)\s*\}\}/g,
+      (m, eid, attr) => {
+        const val = this.hass.states[eid]?.attributes?.[attr];
+        return val !== undefined ? String(val) : m;
+      }
+    );
+    return out;
   }
 
   // ── Background image ─────────────────────────────────────────────────────
@@ -782,6 +957,176 @@ class GridLayout extends LitElement {
       }
       .loose-cards-wrapper > * {
         margin: 0;
+      }
+
+      /* ── Overlays ─────────────────────────────────────────────────── */
+
+      .sgl-overlay {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        z-index: var(--sgl-overlay-z-index, 9999);
+      }
+      .sgl-overlay-content {
+        font-size: var(--sgl-overlay-font-size, 80px);
+        font-weight: 200;
+        color: var(--sgl-overlay-color, white);
+      }
+
+      /* Pulse */
+      .sgl-overlay[data-animation="pulse"] {
+        background:
+          radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 50%),
+          radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.3) 0%, transparent 70%);
+        background-size: 0% 0%, 100% 100%;
+        background-position: center;
+        background-repeat: no-repeat;
+      }
+      .sgl-overlay.active[data-animation="pulse"] {
+        animation: sgl-pulse var(--sgl-overlay-duration, 3s) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      .sgl-overlay.active[data-animation="pulse"] .sgl-overlay-content {
+        animation: sgl-pulse-content var(--sgl-overlay-duration, 3s) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes sgl-pulse {
+        0%   { opacity: 0; backdrop-filter: blur(0px); background-size: 0% 0%, 100% 100%; }
+        15%  { opacity: 1; backdrop-filter: blur(var(--sgl-overlay-blur, 6px)); background-size: 120% 120%, 100% 100%; }
+        60%  { opacity: 1; backdrop-filter: blur(var(--sgl-overlay-blur, 6px)); background-size: 250% 250%, 100% 100%; }
+        100% { opacity: 0; backdrop-filter: blur(0px); background-size: 400% 400%, 100% 100%; }
+      }
+      @keyframes sgl-pulse-content {
+        0%   { transform: scale(0); opacity: 0; text-shadow: none; }
+        20%  { transform: scale(1.4); opacity: 1; text-shadow: 0 0 40px currentColor, 0 0 100px currentColor; }
+        35%  { transform: scale(1); text-shadow: 0 0 30px currentColor, 0 0 80px currentColor; }
+        60%  { opacity: 1; text-shadow: 0 0 20px currentColor; }
+        100% { transform: scale(1); opacity: 0; text-shadow: none; }
+      }
+
+      /* Fade */
+      .sgl-overlay.active[data-animation="fade"] {
+        animation: sgl-fade var(--sgl-overlay-duration, 3s) ease forwards;
+      }
+      .sgl-overlay.active[data-animation="fade"] .sgl-overlay-content {
+        animation: sgl-fade var(--sgl-overlay-duration, 3s) ease forwards;
+      }
+      @keyframes sgl-fade {
+        0%   { opacity: 0; }
+        15%  { opacity: 1; }
+        85%  { opacity: 1; }
+        100% { opacity: 0; }
+      }
+
+      /* Flash */
+      .sgl-overlay.active[data-animation="flash"] {
+        animation: sgl-flash var(--sgl-overlay-duration, 1.5s) ease-out forwards;
+      }
+      .sgl-overlay.active[data-animation="flash"] .sgl-overlay-content {
+        animation: sgl-flash-content var(--sgl-overlay-duration, 1.5s) ease-out forwards;
+      }
+      @keyframes sgl-flash {
+        0%   { opacity: 0; backdrop-filter: blur(0px); }
+        8%   { opacity: 1; backdrop-filter: blur(var(--sgl-overlay-blur, 4px)); }
+        20%  { opacity: 1; }
+        100% { opacity: 0; backdrop-filter: blur(0px); }
+      }
+      @keyframes sgl-flash-content {
+        0%   { transform: scale(0.5); opacity: 0; }
+        8%   { transform: scale(1.2); opacity: 1; }
+        20%  { transform: scale(1); opacity: 1; }
+        100% { transform: scale(0.95); opacity: 0; }
+      }
+
+      /* Slide Up */
+      .sgl-overlay.active[data-animation="slide-up"] {
+        animation: sgl-slide-up var(--sgl-overlay-duration, 3s) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      .sgl-overlay.active[data-animation="slide-up"] .sgl-overlay-content {
+        animation: sgl-slide-up-content var(--sgl-overlay-duration, 3s) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes sgl-slide-up {
+        0%   { opacity: 0; }
+        15%  { opacity: 1; }
+        85%  { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      @keyframes sgl-slide-up-content {
+        0%   { transform: translateY(100px); opacity: 0; }
+        20%  { transform: translateY(0); opacity: 1; }
+        80%  { transform: translateY(0); opacity: 1; }
+        100% { transform: translateY(-30px); opacity: 0; }
+      }
+
+      /* None (static — visible while state matches) */
+      .sgl-overlay.active[data-animation="none"] {
+        opacity: 1;
+      }
+      .sgl-overlay.active[data-animation="none"] .sgl-overlay-content {
+        opacity: 1;
+      }
+
+      /* ── Overlay tester (edit mode) ──────────────────────────────── */
+
+      .sgl-overlay-tester {
+        position: fixed;
+        bottom: 80px;
+        right: calc(16px + env(safe-area-inset-right));
+        z-index: 10000;
+        background: var(--card-background-color, #1c1c1c);
+        border: 1px solid var(--divider-color, #333);
+        border-radius: 12px;
+        padding: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        min-width: 200px;
+        max-width: 320px;
+        font-family: var(--paper-font-body1_-_font-family, sans-serif);
+      }
+      .sgl-overlay-tester-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--primary-color, #03a9f4);
+        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--divider-color, #333);
+      }
+      .sgl-overlay-tester-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 4px 0;
+      }
+      .sgl-overlay-tester-label {
+        font-size: 12px;
+        color: var(--primary-text-color, #fff);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+      .sgl-overlay-tester-btn {
+        background: var(--primary-color, #03a9f4);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 4px 12px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: opacity 0.15s;
+        pointer-events: auto;
+      }
+      .sgl-overlay-tester-btn:hover {
+        opacity: 0.85;
+      }
+      .sgl-overlay-tester-btn:active {
+        opacity: 0.7;
       }
     `;
   }
