@@ -707,11 +707,21 @@ class GridLayout extends LitElement {
       if (isEditMode && sectionConfig.grid_area) {
         const label = document.createElement("div");
         label.className = "section-grid-label";
-        label.textContent = sectionConfig.grid_area;
-        label.addEventListener("click", (e) => {
+
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = sectionConfig.grid_area;
+        label.appendChild(nameSpan);
+
+        const editBtn = document.createElement("button");
+        editBtn.className = "section-grid-edit";
+        editBtn.title = "Edit section YAML";
+        editBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>`;
+        editBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           this._openSectionYamlEditor(sectionConfig.grid_area);
         });
+        label.appendChild(editBtn);
+
         container.appendChild(label);
       }
 
@@ -1032,9 +1042,12 @@ class GridLayout extends LitElement {
       }
       .section-grid-label {
         position: absolute;
-        top: 50%;
+        top: 4px;
         left: 50%;
-        transform: translate(-50%, -50%);
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 6px;
         background: var(--primary-color, #03a9f4);
         color: white;
         padding: 4px 8px;
@@ -1044,17 +1057,34 @@ class GridLayout extends LitElement {
         text-transform: uppercase;
         letter-spacing: 0.5px;
         opacity: 0.4;
-        cursor: pointer;
         z-index: 1;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         backdrop-filter: blur(4px);
         transition: opacity 0.15s;
+        pointer-events: none;
+        white-space: nowrap;
       }
-      .section-grid-label:hover {
-        opacity: 0.9;
+      .section-grid-edit {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        border-radius: 3px;
+        color: white;
+        padding: 2px;
+        cursor: pointer;
+        pointer-events: auto;
+        transition: background 0.15s;
+      }
+      .section-grid-edit:hover {
+        background: rgba(255, 255, 255, 0.4);
       }
       .section-container.edit-mode:hover .section-grid-label {
         opacity: 0.7;
+      }
+      .section-grid-label:has(.section-grid-edit:hover) {
+        opacity: 0.9;
       }
       .section-container.edit-mode:has(hui-section:empty),
       .section-container.edit-mode:has(hui-section[cards=""]) {
@@ -1110,7 +1140,7 @@ class GridLayout extends LitElement {
       .sgl-yaml-editor {
         position: fixed;
         inset: 0;
-        z-index: 10010;
+        z-index: 100;
         background: rgba(0, 0, 0, 0.5);
         display: flex;
         align-items: center;
@@ -1295,7 +1325,7 @@ class GridLayout extends LitElement {
         position: fixed;
         bottom: 80px;
         right: calc(16px + env(safe-area-inset-right));
-        z-index: 10000;
+        z-index: 99;
         background: color-mix(in srgb, var(--card-background-color, #1c1c1c) 75%, transparent);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
