@@ -2,13 +2,11 @@ export interface LovelaceCard extends HTMLElement {
   hass: any;
   editMode?: boolean;
   setConfig(config: any): void;
-  getCardSize?(): Promise<number> | number;
 }
 
 export interface HuiCard extends HTMLElement {
   hass: any;
   editMode?: boolean;
-  getCardSize?(): Promise<number> | number;
 }
 
 export interface CardConfig {
@@ -21,7 +19,6 @@ export interface CardConfig {
           mediaquery?: string;
           sidebar?: string;
         };
-    column?: number;
     grid_area?: string;
     [key: string]: any;
   };
@@ -38,7 +35,6 @@ export interface SectionConfig {
   type: string;
   title?: string;
   cards?: Array<CardConfig>;
-  column_span?: number;
   grid_area?: string;
   [key: string]: any;
 }
@@ -52,7 +48,7 @@ export interface GridViewConfig {
     margin?: string;
     padding?: string;
     height?: string;
-    mediaquery?: Array<Record<string, any>>;
+    mediaquery?: Record<string, Record<string, any>>;
     custom_css?: string;
     background_image?: string;
     background_blur?: string;

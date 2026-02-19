@@ -609,7 +609,7 @@ class GridLayout extends LitElement {
         overflow-y: var(--layout-overflow);
       }
       #root > *:not(.loose-cards-container) {
-        margin: var(--masonry-view-card-margin, 4px 4px 8px);
+        margin: var(--grid-section-margin, 4px 4px 8px);
       }
 
       /* Section containers */

@@ -83,7 +83,7 @@ sections:
 | `background_image` | string | Background image URL or Jinja template |
 | `background_blur` | string | CSS blur value e.g. `"8px"` |
 | `background_opacity` | number | 0–1 opacity for the background |
-| `mediaquery` | list | Responsive overrides (see below) |
+| `mediaquery` | object | Responsive overrides (see below) |
 | `margin` | string | Outer margin of the grid |
 | `padding` | string | Inner padding of the grid |
 
@@ -108,12 +108,14 @@ Supported expressions:
 
 ### Responsive layouts
 
+Keys under `mediaquery` are CSS media query strings; values are layout overrides applied when the query matches:
+
 ```yaml
 layout:
   grid-template-areas: '"left right"'
   grid-template-columns: 1fr 1fr
   mediaquery:
-    - query: "(max-width: 600px)"
+    "(max-width: 600px)":
       grid-template-areas: '"left" "right"'
       grid-template-columns: 1fr
 ```
@@ -130,36 +132,13 @@ Sections Grid Layout and the original [layout-card](https://github.com/thomaslov
 
 ---
 
-## Helper cards
-
-### `gap-card-sgl`
-
-Inserts a blank spacer of a given height.
-
-```yaml
-type: custom:gap-card-sgl
-height: 40   # px, default 50
-```
-
-### `layout-break-sgl`
-
-Forces a column break in column-based child layouts.
-
-```yaml
-type: custom:layout-break-sgl
-```
-
----
-
 ## Migrating from lovelace-layout-card-improved
 
-Replace element names in your YAML:
+Replace the view type in your YAML:
 
 | Old | New |
 |---|---|
 | `custom:grid-layout-improved` | `custom:sections-grid-layout` |
-| `custom:gap-card-improved` | `custom:gap-card-sgl` |
-| `custom:layout-break-improved` | `custom:layout-break-sgl` |
 
 ---
 
