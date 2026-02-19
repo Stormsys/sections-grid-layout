@@ -421,10 +421,28 @@ class GridLayout extends LitElement {
     const tester = document.createElement("div");
     tester.className = "sgl-overlay-tester";
 
+    const header = document.createElement("div");
+    header.className = "sgl-overlay-tester-header";
+
     const title = document.createElement("div");
     title.className = "sgl-overlay-tester-title";
     title.textContent = "Overlays";
-    tester.appendChild(title);
+
+    const minimizeBtn = document.createElement("button");
+    minimizeBtn.className = "sgl-overlay-tester-minimize";
+    minimizeBtn.textContent = "−";
+    minimizeBtn.title = "Minimize";
+    minimizeBtn.addEventListener("click", () => {
+      const collapsed = tester.classList.toggle("collapsed");
+      minimizeBtn.textContent = collapsed ? "+" : "−";
+      minimizeBtn.title = collapsed ? "Expand" : "Minimize";
+    });
+
+    header.append(title, minimizeBtn);
+    tester.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "sgl-overlay-tester-body";
 
     for (let i = 0; i < overlays.length; i++) {
       const cfg = overlays[i];
@@ -441,9 +459,10 @@ class GridLayout extends LitElement {
       btn.addEventListener("click", () => this._testOverlay(i));
 
       row.append(label, btn);
-      tester.appendChild(row);
+      body.appendChild(row);
     }
 
+    tester.appendChild(body);
     this.shadowRoot.appendChild(tester);
   }
 
@@ -1076,14 +1095,23 @@ class GridLayout extends LitElement {
         bottom: 80px;
         right: calc(16px + env(safe-area-inset-right));
         z-index: 10000;
-        background: var(--card-background-color, #1c1c1c);
-        border: 1px solid var(--divider-color, #333);
+        background: color-mix(in srgb, var(--card-background-color, #1c1c1c) 75%, transparent);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255,255,255,0.08);
         border-radius: 12px;
-        padding: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        padding: 10px 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
         min-width: 200px;
         max-width: 320px;
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
+        transition: padding 0.2s ease;
+      }
+      .sgl-overlay-tester-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
       }
       .sgl-overlay-tester-title {
         font-size: 11px;
@@ -1091,9 +1119,36 @@ class GridLayout extends LitElement {
         text-transform: uppercase;
         letter-spacing: 1px;
         color: var(--primary-color, #03a9f4);
-        margin-bottom: 8px;
-        padding-bottom: 6px;
-        border-bottom: 1px solid var(--divider-color, #333);
+      }
+      .sgl-overlay-tester-minimize {
+        background: none;
+        border: none;
+        color: var(--secondary-text-color, #aaa);
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0 2px;
+        pointer-events: auto;
+        transition: color 0.15s;
+      }
+      .sgl-overlay-tester-minimize:hover {
+        color: var(--primary-text-color, #fff);
+      }
+      .sgl-overlay-tester-body {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        overflow: hidden;
+        transition: max-height 0.2s ease, opacity 0.2s ease, margin 0.2s ease;
+        max-height: 400px;
+        opacity: 1;
+      }
+      .sgl-overlay-tester.collapsed .sgl-overlay-tester-body {
+        max-height: 0;
+        opacity: 0;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
       }
       .sgl-overlay-tester-row {
         display: flex;
