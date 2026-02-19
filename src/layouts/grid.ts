@@ -79,12 +79,13 @@ class GridLayout extends LitElement {
 
   async updated(changedProperties: Map<string, any>) {
     // Edit mode: propagate to view-level cards and update internal flag
-    if (
+    const editModeChanged =
       changedProperties.has("lovelace") &&
-      this.lovelace?.editMode !== changedProperties.get("lovelace")?.editMode
-    ) {
+      this.lovelace?.editMode !== changedProperties.get("lovelace")?.editMode;
+    if (editModeChanged) {
       this.cards.forEach((c) => (c.editMode = this.lovelace?.editMode));
       this._editMode = this.lovelace?.editMode ?? false;
+      this._createOverlays(); // call directly here — reliable, no secondary property-change cycle needed
     }
 
     // Keep CSS class in sync with edit mode
@@ -109,10 +110,6 @@ class GridLayout extends LitElement {
     }
 
     if (changedProperties.has("lovelace")) this._updateSectionsLovelace();
-
-    if (changedProperties.has("_editMode")) {
-      this._createOverlays(); // recreate overlays to show/hide tester panel
-    }
 
     if (changedProperties.has("cards")) {
       this._sectionsCache.clear();
@@ -417,7 +414,7 @@ class GridLayout extends LitElement {
     }
 
     // Edit mode: show test panel
-    if (this.lovelace?.editMode) this._createOverlayTester(overlays);
+    if (this._editMode) this._createOverlayTester(overlays);
   }
 
   _createOverlayTester(overlays: OverlayConfig[]) {
