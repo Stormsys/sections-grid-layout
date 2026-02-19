@@ -218,12 +218,12 @@ class GridLayout extends LitElement {
           bottom: 0;
           right: 0;
           left: var(--mdc-drawer-width, 0px);
-          top: var(--header-height, 56px);
+          top: var(--kiosk-header-height, calc(var(--header-height, 56px) + var(--safe-area-inset-top, 0px) + var(--view-container-padding-top, 0px)));
           margin: 0 !important;
           padding: 0 !important;
         }
         #root.edit-mode {
-          top: calc(var(--header-height, 56px) + var(--tab-bar-height, 56px) - 2px);
+          top: calc(var(--header-height, 56px) + var(--tab-bar-height, 56px) - 2px + var(--safe-area-inset-top, 0px));
         }`;
     }
 
