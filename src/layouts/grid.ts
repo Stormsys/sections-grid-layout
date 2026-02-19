@@ -259,6 +259,10 @@ class GridLayout extends LitElement {
           #root.edit-mode {
             top: 0;
           }
+          .section-container {
+            height: auto;
+            overflow: visible;
+          }
         }`;
     }
 
