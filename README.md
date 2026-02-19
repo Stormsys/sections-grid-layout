@@ -86,6 +86,58 @@ sections:
 | `mediaquery` | object | Responsive overrides (see below) |
 | `margin` | string | Outer margin of the grid |
 | `padding` | string | Inner padding of the grid |
+| `kiosk` | boolean | Fixed-position layout filling the viewport below the header |
+| `zoom` | number/string | CSS zoom applied to the entire grid (e.g. `0.9`) |
+
+### Per-section options
+
+Each section can have these additional properties alongside `grid_area`, `type`, and `cards`:
+
+| Key | Type | Description |
+|---|---|---|
+| `scrollable` | boolean | Makes the section scrollable with hidden scrollbars |
+| `background` | string | CSS background value (color, gradient, image) |
+| `backdrop_blur` | string | CSS blur value applied as `backdrop-filter` e.g. `"10px"` |
+| `zoom` | number/string | CSS zoom applied to this section (e.g. `0.85`) |
+| `overflow` | string | CSS overflow value (`hidden`, `auto`, `scroll`, etc.) |
+
+```yaml
+sections:
+  - grid_area: sidebar
+    type: grid
+    scrollable: true
+    background: "rgba(0,0,0,0.2)"
+    backdrop_blur: "10px"
+    cards:
+      - type: entities
+        entities:
+          - light.living_room
+  - grid_area: main
+    type: grid
+    zoom: 0.9
+    cards:
+      - type: history-graph
+        entities:
+          - sensor.temperature
+```
+
+### Kiosk mode
+
+Set `kiosk: true` on the layout to make the grid fill the viewport as a fixed-position overlay (below the HA header). This is useful for wall-mounted dashboards:
+
+```yaml
+layout:
+  kiosk: true
+  zoom: 0.9
+  grid-template-areas: |
+    "header header"
+    "main   sidebar"
+    "footer footer"
+  grid-template-columns: 2fr 1fr
+  grid-template-rows: auto 1fr auto
+```
+
+In kiosk mode the grid is pinned to the viewport edges, respecting the HA sidebar width and header height. In edit mode the top offset automatically adjusts to account for the tab bar.
 
 ### Jinja templates in `custom_css`
 

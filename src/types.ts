@@ -36,6 +36,11 @@ export interface SectionConfig {
   title?: string;
   cards?: Array<CardConfig>;
   grid_area?: string;
+  scrollable?: boolean;
+  background?: string;
+  backdrop_blur?: string;
+  zoom?: number | string;
+  overflow?: string;
   [key: string]: any;
 }
 
@@ -48,6 +53,8 @@ export interface GridViewConfig {
     margin?: string;
     padding?: string;
     height?: string;
+    kiosk?: boolean;
+    zoom?: number | string;
     mediaquery?: Record<string, Record<string, any>>;
     custom_css?: string;
     background_image?: string;

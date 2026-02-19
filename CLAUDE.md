@@ -81,6 +81,9 @@ Abstract base. Manages `editMode`, card visibility, and the FAB (suppressed in s
 - **Section management**: Creates/destroys `hui-section` wrappers; maintains `_sectionsCache`; auto-saves new sections to lovelace config
 - **Jinja template evaluation**: Evaluates `{{ states() }}`, `{{ state_attr() }}`, `{% if %}` in `custom_css`; tracks entities in `_trackedEntities`; debounced via `requestAnimationFrame`
 - **Background images**: Fixed positioning, blur, opacity, template support
+- **Kiosk mode**: `layout.kiosk: true` makes `#root` fixed-position, filling viewport below HA header; edit-mode offset adjusts for tab bar
+- **Layout zoom**: `layout.zoom` applies CSS `zoom` to `#root`
+- **Per-section styling**: `scrollable`, `background`, `backdrop_blur`, `zoom`, `overflow` on each `SectionConfig` — applied as classes/inline styles on `.section-container`
 - **Edit mode UI**: Section labels with grid-area name; loose-cards container for orphan cards
 - **`_updateSectionsLovelace()`**: Pushes fresh `lovelace` AND fresh `config` (looked up by `grid_area`) to each `hui-section` so it never renders from a stale snapshot
 

@@ -207,14 +207,40 @@ class GridLayout extends LitElement {
   _updateStyles() {
     const styleEl = this.shadowRoot?.querySelector("#layout-styles") as HTMLStyleElement;
     if (!styleEl) return;
-    const customCss = this._evaluateCssTemplates(this._config.layout?.custom_css || "");
+    const layout = this._config?.layout;
+    const customCss = this._evaluateCssTemplates(layout?.custom_css || "");
+
+    let kioskCss = "";
+    if (layout?.kiosk) {
+      kioskCss = `
+        #root {
+          position: fixed !important;
+          bottom: 0;
+          right: 0;
+          left: var(--mdc-drawer-width, 0px);
+          top: var(--header-height, 56px);
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        #root.edit-mode {
+          top: calc(var(--header-height, 56px) + var(--tab-bar-height, 56px) - 2px);
+        }`;
+    }
+
+    let zoomCss = "";
+    if (layout?.zoom != null) {
+      zoomCss = `#root { zoom: ${layout.zoom}; }`;
+    }
+
     styleEl.innerHTML = `
       :host {
-        --layout-margin: ${this._config.layout?.margin ?? "0px 4px 0px 4px"};
-        --layout-padding: ${this._config.layout?.padding ?? "4px 0px 4px 0px"};
-        --layout-height: ${this._config.layout?.height ?? "auto"};
-        --layout-overflow: ${this._config.layout?.height !== undefined ? "auto" : "visible"};
+        --layout-margin: ${layout?.margin ?? "0px 4px 0px 4px"};
+        --layout-padding: ${layout?.padding ?? "4px 0px 4px 0px"};
+        --layout-height: ${layout?.height ?? "auto"};
+        --layout-overflow: ${layout?.height !== undefined ? "auto" : "visible"};
       }
+      ${kioskCss}
+      ${zoomCss}
       ${customCss}`;
   }
 
@@ -418,6 +444,24 @@ class GridLayout extends LitElement {
         container.setAttribute("data-grid-area", sectionConfig.grid_area);
       }
 
+      // Per-section styling
+      if (sectionConfig.scrollable) {
+        container.classList.add("scrollable");
+      }
+      if (sectionConfig.background) {
+        container.style.background = sectionConfig.background;
+      }
+      if (sectionConfig.backdrop_blur) {
+        container.style.backdropFilter = `blur(${sectionConfig.backdrop_blur})`;
+        (container.style as any).webkitBackdropFilter = `blur(${sectionConfig.backdrop_blur})`;
+      }
+      if (sectionConfig.zoom != null) {
+        (container.style as any).zoom = String(sectionConfig.zoom);
+      }
+      if (sectionConfig.overflow) {
+        container.style.overflow = sectionConfig.overflow;
+      }
+
       if (isEditMode && sectionConfig.grid_area) {
         const label = document.createElement("div");
         label.className = "section-grid-label";
@@ -617,6 +661,14 @@ class GridLayout extends LitElement {
         position: relative;
         display: flex;
         flex-direction: column;
+      }
+      .section-container.scrollable {
+        overflow-y: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+      }
+      .section-container.scrollable::-webkit-scrollbar {
+        display: none;
       }
       .section-container.edit-mode {
         border: 2px dashed var(--primary-color, #03a9f4);
