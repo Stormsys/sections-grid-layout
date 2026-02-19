@@ -715,11 +715,11 @@ class GridLayout extends LitElement {
 
         const editBtn = document.createElement("button");
         editBtn.className = "section-grid-edit";
-        editBtn.title = "Edit section YAML";
-        editBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>`;
+        editBtn.title = "Edit section";
+        editBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>`;
         editBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          this._openSectionYamlEditor(sectionConfig.grid_area);
+          this._openSectionEditor(sectionConfig.grid_area, sectionIndex);
         });
         label.appendChild(editBtn);
 
@@ -862,7 +862,39 @@ class GridLayout extends LitElement {
     }
   }
 
-  // ── Section YAML editor ──────────────────────────────────────────────────
+  // ── Section editor ──────────────────────────────────────────────────────
+
+  _openSectionEditor(gridArea: string, sectionIndex: number) {
+    // Try HA's native section editor dialog first
+    const opened = this._tryNativeSectionEditor(sectionIndex);
+    if (!opened) {
+      this._openSectionYamlEditor(gridArea);
+    }
+  }
+
+  _tryNativeSectionEditor(sectionIndex: number): boolean {
+    try {
+      // HA's dialog manager listens for show-dialog events on the DOM
+      const dialogTag = "hui-dialog-edit-section";
+      if (!customElements.get(dialogTag)) return false;
+
+      this.dispatchEvent(new CustomEvent("show-dialog", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          dialogTag,
+          dialogParams: {
+            lovelace: this.lovelace,
+            viewIndex: this.index,
+            sectionIndex,
+          },
+        },
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   _sectionConfigToYaml(config: any): string {
     const SKIP = new Set(["type", "cards", "grid_area"]);
@@ -1069,23 +1101,24 @@ class GridLayout extends LitElement {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.15);
         border: none;
         border-radius: 3px;
         color: white;
-        padding: 2px;
+        padding: 3px;
         cursor: pointer;
         pointer-events: auto;
-        transition: background 0.15s;
+        opacity: 0;
+        transition: opacity 0.15s, background 0.15s;
+      }
+      .section-grid-label:hover .section-grid-edit {
+        opacity: 1;
       }
       .section-grid-edit:hover {
-        background: rgba(255, 255, 255, 0.4);
+        background: rgba(255, 255, 255, 0.35);
       }
       .section-container.edit-mode:hover .section-grid-label {
         opacity: 0.7;
-      }
-      .section-grid-label:has(.section-grid-edit:hover) {
-        opacity: 0.9;
       }
       .section-container.edit-mode:has(hui-section:empty),
       .section-container.edit-mode:has(hui-section[cards=""]) {
@@ -1141,7 +1174,7 @@ class GridLayout extends LitElement {
       .sgl-yaml-editor {
         position: fixed;
         inset: 0;
-        z-index: 100;
+        z-index: 8;
         background: rgba(0, 0, 0, 0.5);
         display: flex;
         align-items: center;
@@ -1326,7 +1359,7 @@ class GridLayout extends LitElement {
         position: fixed;
         bottom: 80px;
         right: calc(16px + env(safe-area-inset-right));
-        z-index: 99;
+        z-index: 7;
         background: color-mix(in srgb, var(--card-background-color, #1c1c1c) 75%, transparent);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
