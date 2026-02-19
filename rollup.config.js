@@ -9,7 +9,7 @@ const dev = process.env.ROLLUP_WATCH;
 export default {
   input: "src/main.ts",
   output: {
-    file: "layout-card-improved.js",
+    file: "sections-grid-layout.js",
     format: "es",
   },
   plugins: [

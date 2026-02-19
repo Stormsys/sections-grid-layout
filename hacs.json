@@ -1,9 +1,9 @@
 {
-  "name": "Layout Card Improved",
+  "name": "Sections Grid Layout",
   "content_in_root": true,
-  "filename": "layout-card-improved.js",
+  "filename": "sections-grid-layout.js",
   "render_readme": true,
-  "homeassistant": "2021.10.0",
+  "homeassistant": "2024.2.0",
   "zip_release": false,
   "persistent_directory": false
 }

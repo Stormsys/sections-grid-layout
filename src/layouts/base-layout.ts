@@ -3,9 +3,9 @@ import { property } from "lit/decorators.js";
 import {
   CardConfig,
   CardConfigGroup,
+  GridViewConfig,
   HuiCard,
   LovelaceCard,
-  ViewConfig,
 } from "../types";
 
 export class BaseLayout extends LitElement {
@@ -17,9 +17,9 @@ export class BaseLayout extends LitElement {
   @property() _editMode: boolean = false;
   _editorLoaded = false;
 
-  @property() _config: ViewConfig;
+  @property() _config: GridViewConfig;
 
-  async setConfig(config: ViewConfig) {
+  async setConfig(config: GridViewConfig) {
     this._config = { ...config };
     if (this._config.view_layout && this._config.layout === undefined) {
       // Maybe avoid a bit of confusion...

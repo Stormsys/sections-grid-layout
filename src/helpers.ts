@@ -24,21 +24,9 @@ export const loadHaForm = async () => {
   await card.getConfigElement();
 };
 
-export const LAYOUT_CARD_SELECTOR_OPTIONS = [
+export const SECTIONS_GRID_SELECTOR_OPTIONS = [
   {
-    value: "custom:masonry-layout-improved",
-    label: "Masonry (layout-card-improved)",
-  },
-  {
-    value: "custom:horizontal-layout-improved",
-    label: "Horizontal (layout-card-improved)",
-  },
-  {
-    value: "custom:vertical-layout-improved",
-    label: "Vertical (layout-card-improved)",
-  },
-  {
-    value: "custom:grid-layout-improved",
-    label: "Grid (layout-card-improved)",
+    value: "custom:sections-grid-layout",
+    label: "Sections Grid",
   },
 ];

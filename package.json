@@ -1,13 +1,13 @@
 {
-  "name": "layout-card-improved",
-  "version": "3.1.3",
-  "description": "Improved version of layout-card with sections and custom CSS",
+  "name": "sections-grid-layout",
+  "version": "1.0.0",
+  "description": "Home Assistant Lovelace view layout: native sections arranged in a CSS Grid with Jinja template support",
   "private": true,
   "scripts": {
     "build": "rollup -c",
     "watch": "rollup -c --watch"
   },
-  "author": "Thomas Lovén",
+  "author": "Stormsys",
   "license": "MIT",
   "devDependencies": {
     "@babel/preset-env": "^7.27.2",

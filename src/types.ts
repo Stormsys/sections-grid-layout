@@ -23,7 +23,7 @@ export interface CardConfig {
         };
     column?: number;
     grid_area?: string;
-    [key: string]: any; // Allow any grid-* properties
+    [key: string]: any;
   };
 }
 
@@ -34,63 +34,31 @@ export interface CardConfigGroup {
   show?: boolean;
 }
 
-export interface ViewConfig {
-  title?: string;
-  type?: string;
-  cards?: Array<CardConfig>;
-  layout?: {
-    margin?: string;
-    padding?: string;
-    height?: string;
-  };
-  view_layout?: {};
-}
-
-export interface ColumnViewConfig extends ViewConfig {
-  layout?: {
-    margin?: string;
-    padding?: string;
-    height?: string;
-    reflow?: boolean;
-    width?: number;
-    column_widths: string;
-    max_width?: number;
-    max_cols?: number;
-    min_height?: number;
-    rtl?: boolean;
-    card_margin?: string;
-  };
-}
-
 export interface SectionConfig {
   type: string;
   title?: string;
   cards?: Array<CardConfig>;
   column_span?: number;
-  grid_area?: string; // NEW: assign section to grid area
+  grid_area?: string;
   [key: string]: any;
 }
 
-export interface GridViewConfig extends ViewConfig {
-  sections?: Array<SectionConfig>; // Native sections!
+export interface GridViewConfig {
+  title?: string;
+  type?: string;
+  cards?: Array<CardConfig>;
+  sections?: Array<SectionConfig>;
   layout?: {
     margin?: string;
     padding?: string;
     height?: string;
     mediaquery?: Array<Record<string, any>>;
     custom_css?: string;
-    background_image?: string; // Supports Jinja templates
-    background_blur?: string; // CSS blur value (e.g., "10px")
-    background_opacity?: number; // 0-1
+    background_image?: string;
+    background_blur?: string;
+    background_opacity?: number;
     "grid-template-areas"?: string;
-    [key: string]: any; // Allow any grid-* properties
+    [key: string]: any;
   };
-}
-
-export interface LayoutCardConfig {
-  cards?: Array<CardConfig>;
-  entities?: Array<CardConfig>;
-  layout_type?: string;
-  layout?: any;
-  layout_options?: any; // legacy
+  view_layout?: {};
 }
