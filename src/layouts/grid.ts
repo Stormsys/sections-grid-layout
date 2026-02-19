@@ -245,6 +245,7 @@ class GridLayout extends LitElement {
           overflow-y: scroll;
           scrollbar-width: none;
           -webkit-overflow-scrolling: touch;
+          margin: 0 !important;
         }
         .section-container::-webkit-scrollbar {
           display: none;
