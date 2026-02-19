@@ -62,10 +62,9 @@ class GridLayout extends BaseLayout {
     
     // Propagate hass updates to native sections (CRITICAL for card updates!)
     if (changedProperties.has("hass")) {
-      // Skip expensive operations during active editing
-      if (!this.lovelace?.editMode) {
-        this._queueSectionHassUpdate();
-      }
+      // Always propagate hass to sections (debounced); skipping this in edit
+      // mode broke cards like Bubble Card that need live hass to render/edit.
+      this._queueSectionHassUpdate();
       
       // Only re-evaluate templates if tracked entities changed
       if (this._hasTrackedEntitiesChanged(changedProperties)) {
