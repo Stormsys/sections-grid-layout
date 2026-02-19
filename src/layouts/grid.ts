@@ -240,6 +240,25 @@ class GridLayout extends LitElement {
         }
         #root.edit-mode {
           top: calc(var(--header-height, 56px) + var(--tab-bar-height, 56px) - 2px + var(--safe-area-inset-top, 0px));
+        }
+        @media (max-width: 768px) {
+          #root {
+            position: relative !important;
+            top: 0;
+            bottom: auto;
+            left: auto;
+            right: auto;
+            height: auto;
+            min-height: 100vh;
+            overflow: visible;
+            padding: 12px !important;
+            gap: 8px;
+            grid-template-rows: auto;
+            grid-auto-rows: max-content;
+          }
+          #root.edit-mode {
+            top: 0;
+          }
         }`;
     }
 
