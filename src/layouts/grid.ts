@@ -375,6 +375,11 @@ class GridLayout extends LitElement {
         if (o.zoom != null) props.push(`zoom: ${o.zoom} !important;`);
         if (o.overflow) props.push(`overflow: ${o.overflow} !important;`);
         if (o.display) props.push(`display: ${o.display} !important;`);
+        if (o.variables) {
+          for (const [k, v] of Object.entries(o.variables)) {
+            props.push(`--${k}: ${v} !important;`);
+          }
+        }
         let sectionRules = "";
         if (props.length) {
           sectionRules += `.section-${section.grid_area} { ${props.join(" ")} }`;
@@ -812,6 +817,11 @@ class GridLayout extends LitElement {
       }
       if (sectionConfig.tint) {
         container.style.backgroundColor = sectionConfig.tint;
+      }
+      if (sectionConfig.variables) {
+        for (const [k, v] of Object.entries(sectionConfig.variables)) {
+          container.style.setProperty(`--${k}`, String(v));
+        }
       }
 
       if (isEditMode && sectionConfig.grid_area) {

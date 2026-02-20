@@ -58,6 +58,7 @@ export interface SectionConfig {
   overflow?: string;
   padding?: string;
   tint?: string;
+  variables?: Record<string, string>;
   mediaquery?: Record<string, Record<string, any>>;
   [key: string]: any;
 }

@@ -107,6 +107,7 @@ Each section can have these additional properties alongside `grid_area`, `type`,
 | `overflow` | string | CSS overflow value (`hidden`, `auto`, `scroll`, etc.) |
 | `padding` | string | Section padding (default: `10px` via `--section-padding`) |
 | `tint` | string | Semi-transparent background colour (e.g. `"#20293cdd"`) |
+| `variables` | object | CSS custom properties scoped to this section (e.g. `{ primary-background-color: none }`) |
 | `mediaquery` | object | Per-section responsive overrides (see below) |
 
 ```yaml
@@ -307,7 +308,7 @@ sections:
           .section-main hui-section { --column-count: 1; }
 ```
 
-Supported per-section mediaquery properties: `tint`, `padding`, `background`, `backdrop_blur`, `zoom`, `overflow`, `display`, and `custom_css`.
+Supported per-section mediaquery properties: `tint`, `padding`, `background`, `backdrop_blur`, `zoom`, `overflow`, `display`, `variables`, and `custom_css`.
 
 ---
 
