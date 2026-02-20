@@ -30,6 +30,7 @@ class GridLayout extends LitElement {
   _savingConfig: boolean = false;
   _overlayStates: Map<number, boolean> = new Map();
   _rendered: boolean = false;
+  _dialogObserver: MutationObserver | null = null;
 
   // Stable bound handlers so addEventListener/removeEventListener match
   _onCardMQChange = () => this._placeCards();
@@ -139,6 +140,7 @@ class GridLayout extends LitElement {
     if (this.hass) this._updateOverlayStates();
 
     if (this.lovelace?.editMode) this._ensureAllSectionsExistInConfig();
+    this._setupDialogObserver();
   }
 
   disconnectedCallback() {
@@ -146,6 +148,19 @@ class GridLayout extends LitElement {
     this._mediaQueries.forEach(mq => mq?.removeEventListener("change", this._onCardMQChange));
     this._layoutMQs.forEach(mq => mq?.removeEventListener("change", this._onLayoutMQChange));
     this._overlayStates.clear();
+    this._dialogObserver?.disconnect();
+    this._dialogObserver = null;
+  }
+
+  _setupDialogObserver() {
+    if (this._dialogObserver) return;
+    this._dialogObserver = new MutationObserver(() => {
+      const tester = this.shadowRoot?.querySelector(".sgl-overlay-tester") as HTMLElement;
+      if (!tester) return;
+      const dialogOpen = !!document.querySelector("ha-dialog, ha-more-info-dialog, dialog[open]");
+      tester.style.display = dialogOpen ? "none" : "";
+    });
+    this._dialogObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   // ── Card helpers (used for view-level loose cards) ────────────────────────
@@ -708,20 +723,20 @@ class GridLayout extends LitElement {
       if (isEditMode && sectionConfig.grid_area) {
         const label = document.createElement("div");
         label.className = "section-grid-label";
-
-        const nameSpan = document.createElement("span");
-        nameSpan.textContent = sectionConfig.grid_area;
-        label.appendChild(nameSpan);
-
-        const editBtn = document.createElement("button");
-        editBtn.className = "section-grid-edit";
-        editBtn.title = "Edit section";
-        editBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>`;
-        editBtn.addEventListener("click", (e) => {
+        label.addEventListener("click", (e) => {
           e.stopPropagation();
           this._openSectionEditor(sectionConfig.grid_area, sectionIndex);
         });
-        label.appendChild(editBtn);
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "section-grid-label-text";
+        nameSpan.textContent = sectionConfig.grid_area;
+        label.appendChild(nameSpan);
+
+        const editOverlay = document.createElement("div");
+        editOverlay.className = "section-grid-edit-overlay";
+        editOverlay.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>`;
+        label.appendChild(editOverlay);
 
         container.appendChild(label);
       }
@@ -865,24 +880,14 @@ class GridLayout extends LitElement {
   // ── Section editor ──────────────────────────────────────────────────────
 
   _openSectionEditor(gridArea: string, sectionIndex: number) {
-    // Try HA's native section editor dialog first
-    const opened = this._tryNativeSectionEditor(sectionIndex);
-    if (!opened) {
-      this._openSectionYamlEditor(gridArea);
-    }
-  }
-
-  _tryNativeSectionEditor(sectionIndex: number): boolean {
     try {
-      // HA's dialog manager listens for show-dialog events on the DOM
-      const dialogTag = "hui-dialog-edit-section";
-      if (!customElements.get(dialogTag)) return false;
-
+      // HA's dialog manager listens for show-dialog events and lazy-loads
+      // the dialog component, so we don't check customElements.get() first.
       this.dispatchEvent(new CustomEvent("show-dialog", {
         bubbles: true,
         composed: true,
         detail: {
-          dialogTag,
+          dialogTag: "hui-dialog-edit-section",
           dialogParams: {
             lovelace: this.lovelace,
             viewIndex: this.index,
@@ -890,9 +895,9 @@ class GridLayout extends LitElement {
           },
         },
       }));
-      return true;
     } catch {
-      return false;
+      // Fallback to simple YAML editor if dispatch fails
+      this._openSectionYamlEditor(gridArea);
     }
   }
 
@@ -1075,12 +1080,10 @@ class GridLayout extends LitElement {
       }
       .section-grid-label {
         position: absolute;
-        top: 4px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
+        bottom: 4px;
+        right: 4px;
+        display: inline-flex;
         align-items: center;
-        gap: 6px;
         background: var(--primary-color, #03a9f4);
         color: white;
         padding: 4px 8px;
@@ -1094,28 +1097,24 @@ class GridLayout extends LitElement {
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         backdrop-filter: blur(4px);
         transition: opacity 0.15s;
-        pointer-events: none;
+        cursor: pointer;
+        pointer-events: auto;
         white-space: nowrap;
+        overflow: hidden;
       }
-      .section-grid-edit {
+      .section-grid-edit-overlay {
+        position: absolute;
+        inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(255, 255, 255, 0.15);
-        border: none;
-        border-radius: 3px;
-        color: white;
-        padding: 3px;
-        cursor: pointer;
-        pointer-events: auto;
+        background: rgba(0, 0, 0, 0.55);
+        border-radius: 4px;
         opacity: 0;
-        transition: opacity 0.15s, background 0.15s;
+        transition: opacity 0.15s;
       }
-      .section-grid-label:hover .section-grid-edit {
+      .section-grid-label:hover .section-grid-edit-overlay {
         opacity: 1;
-      }
-      .section-grid-edit:hover {
-        background: rgba(255, 255, 255, 0.35);
       }
       .section-container.edit-mode:hover .section-grid-label {
         opacity: 0.7;
