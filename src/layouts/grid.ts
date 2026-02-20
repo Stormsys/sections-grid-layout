@@ -976,9 +976,16 @@ class GridLayout extends LitElement {
     const liveSections: any[] =
       (this.lovelace?.config?.views?.[this.index]?.sections as any[]) ?? [];
     const sectionConfig = liveSections.find((s: any) => s.grid_area === gridArea) || {};
-    const yaml = this._sectionConfigToYaml(sectionConfig);
 
-    let currentValue = yaml;
+    // Strip 'cards' — those are managed by the card editor, not here
+    const editableConfig: Record<string, any> = {};
+    for (const [key, value] of Object.entries(sectionConfig)) {
+      if (key !== "cards") editableConfig[key] = value;
+    }
+
+    // Track the current parsed value (object) or raw text (string)
+    let currentParsed: Record<string, any> | null = editableConfig;
+    let currentText: string = this._sectionConfigToYaml(editableConfig);
 
     const backdrop = document.createElement("div");
     backdrop.className = "sgl-yaml-editor";
@@ -990,28 +997,44 @@ class GridLayout extends LitElement {
     header.className = "sgl-yaml-header";
     header.textContent = `Edit Section: ${gridArea}`;
 
-    // Use HA's code editor if available, otherwise fall back to textarea
     const editorContainer = document.createElement("div");
     editorContainer.className = "sgl-yaml-editor-container";
 
-    const useHaEditor = !!customElements.get("ha-code-editor");
-    if (useHaEditor) {
+    // Prefer ha-yaml-editor (handles object <-> YAML automatically),
+    // then ha-code-editor, then plain textarea
+    const useYamlEditor = !!customElements.get("ha-yaml-editor");
+    const useCodeEditor = !useYamlEditor && !!customElements.get("ha-code-editor");
+
+    if (useYamlEditor) {
+      const yamlEditor = document.createElement("ha-yaml-editor") as any;
+      yamlEditor.defaultValue = editableConfig;
+      if (this.hass) yamlEditor.hass = this.hass;
+      yamlEditor.addEventListener("value-changed", (e: CustomEvent) => {
+        currentParsed = e.detail.value ?? null;
+        currentText = "";
+      });
+      editorContainer.appendChild(yamlEditor);
+    } else if (useCodeEditor) {
       const codeEditor = document.createElement("ha-code-editor") as any;
       codeEditor.mode = "yaml";
       codeEditor.autofocus = true;
       codeEditor.autocompleteEntities = true;
-      codeEditor.value = yaml;
+      codeEditor.value = currentText;
       if (this.hass) codeEditor.hass = this.hass;
       codeEditor.addEventListener("value-changed", (e: CustomEvent) => {
-        currentValue = e.detail.value ?? "";
+        currentText = e.detail.value ?? "";
+        currentParsed = null;
       });
       editorContainer.appendChild(codeEditor);
     } else {
       const textarea = document.createElement("textarea");
       textarea.className = "sgl-yaml-textarea";
-      textarea.value = yaml;
+      textarea.value = currentText;
       textarea.spellcheck = false;
-      textarea.addEventListener("input", () => { currentValue = textarea.value; });
+      textarea.addEventListener("input", () => {
+        currentText = textarea.value;
+        currentParsed = null;
+      });
       editorContainer.appendChild(textarea);
       requestAnimationFrame(() => textarea.focus());
     }
@@ -1028,17 +1051,19 @@ class GridLayout extends LitElement {
     saveBtn.className = "sgl-yaml-btn sgl-yaml-btn-save";
     saveBtn.textContent = "Save";
     saveBtn.addEventListener("click", () => {
-      const parsed = this._parseYaml(currentValue);
-      if (!parsed) {
+      let parsed = currentParsed;
+      if (!parsed && currentText) {
+        parsed = this._parseYaml(currentText);
+      }
+      if (!parsed || typeof parsed !== "object") {
         alert("Invalid YAML");
         return;
       }
-      // Preserve cards from original config; parsed YAML replaces everything else
+      // Preserve cards from original config
       const merged: Record<string, any> = {
         ...parsed,
         cards: sectionConfig.cards || [],
       };
-      // Ensure grid_area is preserved
       if (!merged.grid_area) merged.grid_area = gridArea;
       if (!merged.type) merged.type = sectionConfig.type || "grid";
       this._handleSectionConfigChanged(gridArea, merged);
