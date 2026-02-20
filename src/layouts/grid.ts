@@ -284,6 +284,11 @@ class GridLayout extends LitElement {
       tintCss = `#root { background-color: ${layout.tint}; }`;
     }
 
+    let backdropBlurCss = "";
+    if (layout?.backdrop_blur) {
+      backdropBlurCss = `#root { backdrop-filter: blur(${layout.backdrop_blur}); -webkit-backdrop-filter: blur(${layout.backdrop_blur}); }`;
+    }
+
     let variablesCss = "";
     if (layout?.variables) {
       const vars = Object.entries(layout.variables)
@@ -332,6 +337,9 @@ class GridLayout extends LitElement {
         }
         if ((overrides as any).tint) {
           rules.push(`#root { background-color: ${(overrides as any).tint}; }`);
+        }
+        if ((overrides as any).backdrop_blur) {
+          rules.push(`#root { backdrop-filter: blur(${(overrides as any).backdrop_blur}); -webkit-backdrop-filter: blur(${(overrides as any).backdrop_blur}); }`);
         }
         if ((overrides as any).variables) {
           const vars = Object.entries((overrides as any).variables)
@@ -399,6 +407,7 @@ class GridLayout extends LitElement {
       }
       ${variablesCss}
       ${tintCss}
+      ${backdropBlurCss}
       ${kioskCss}
       ${zoomCss}
       ${mediaCss}

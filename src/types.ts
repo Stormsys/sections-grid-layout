@@ -74,6 +74,7 @@ export interface GridViewConfig {
     kiosk?: boolean;
     zoom?: number | string;
     tint?: string;
+    backdrop_blur?: string;
     variables?: Record<string, string>;
     breakpoints?: Record<string, string>;
     mediaquery?: Record<string, Record<string, any>>;

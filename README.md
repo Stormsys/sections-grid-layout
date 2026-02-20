@@ -84,6 +84,7 @@ sections:
 | `background_blur` | string | CSS blur value e.g. `"8px"` |
 | `background_opacity` | number | 0–1 opacity for the background |
 | `tint` | string | Semi-transparent background colour on the grid (e.g. `"#00000020"`) |
+| `backdrop_blur` | string | CSS blur applied to the grid via `backdrop-filter` e.g. `"10px"` |
 | `variables` | object | CSS custom properties injected on `:host` (see below) |
 | `breakpoints` | object | Named media queries for reuse (see below) |
 | `mediaquery` | object | Responsive overrides — keys can be raw queries or named breakpoints (see below) |
@@ -259,7 +260,7 @@ Raw query strings still work alongside named breakpoints.
 
 Keys under `mediaquery` are CSS media query strings **or named breakpoints**; values are layout overrides applied when the query matches.
 
-Layout-level `mediaquery` supports: grid properties, `kiosk`, `zoom`, `tint`, `variables`, and `custom_css`.
+Layout-level `mediaquery` supports: grid properties, `kiosk`, `zoom`, `tint`, `backdrop_blur`, `variables`, and `custom_css`.
 
 ```yaml
 layout:
