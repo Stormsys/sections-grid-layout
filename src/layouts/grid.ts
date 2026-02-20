@@ -879,26 +879,27 @@ class GridLayout extends LitElement {
 
   // ── Section editor ──────────────────────────────────────────────────────
 
-  _openSectionEditor(gridArea: string, sectionIndex: number) {
-    try {
-      // HA's dialog manager listens for show-dialog events and lazy-loads
-      // the dialog component, so we don't check customElements.get() first.
-      this.dispatchEvent(new CustomEvent("show-dialog", {
-        bubbles: true,
-        composed: true,
-        detail: {
-          dialogTag: "hui-dialog-edit-section",
-          dialogParams: {
-            lovelace: this.lovelace,
-            viewIndex: this.index,
-            sectionIndex,
-          },
-        },
-      }));
-    } catch {
-      // Fallback to simple YAML editor if dispatch fails
-      this._openSectionYamlEditor(gridArea);
+  _openSectionEditor(gridArea: string, _sectionIndex: number) {
+    // Find the hui-section inside the matching section-container and
+    // click its native edit button (the hamburger / pencil in its shadow DOM).
+    const container = this.shadowRoot?.querySelector(
+      `.section-container[data-grid-area="${gridArea}"]`
+    );
+    const section = container?.querySelector("hui-section") as any;
+    if (section?.shadowRoot) {
+      // HA's hui-section renders an edit toolbar; look for common button selectors
+      const editBtn =
+        section.shadowRoot.querySelector(".header .action-buttons button") ??
+        section.shadowRoot.querySelector(".container .header button") ??
+        section.shadowRoot.querySelector("ha-icon-button") ??
+        section.shadowRoot.querySelector("button");
+      if (editBtn) {
+        (editBtn as HTMLElement).click();
+        return;
+      }
     }
+    // Fallback to simple YAML editor
+    this._openSectionYamlEditor(gridArea);
   }
 
   _sectionConfigToYaml(config: any): string {
@@ -1369,7 +1370,12 @@ class GridLayout extends LitElement {
         min-width: 200px;
         max-width: 320px;
         font-family: var(--paper-font-body1_-_font-family, sans-serif);
-        transition: padding 0.2s ease;
+        transition: padding 0.2s ease, min-width 0.2s ease, border-radius 0.2s ease;
+      }
+      .sgl-overlay-tester.collapsed {
+        min-width: 0;
+        padding: 4px 6px;
+        border-radius: 8px;
       }
       .sgl-overlay-tester-header {
         display: flex;
@@ -1383,6 +1389,13 @@ class GridLayout extends LitElement {
         text-transform: uppercase;
         letter-spacing: 1px;
         color: var(--primary-color, #03a9f4);
+        transition: font-size 0.2s ease, width 0.2s ease, opacity 0.2s ease;
+        overflow: hidden;
+      }
+      .sgl-overlay-tester.collapsed .sgl-overlay-tester-title {
+        font-size: 0;
+        width: 0;
+        opacity: 0;
       }
       .sgl-overlay-tester-minimize {
         background: none;
