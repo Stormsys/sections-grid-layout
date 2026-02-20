@@ -22,6 +22,7 @@ class GridLayout extends LitElement {
   _config: GridViewConfig;
   _mediaQueries: Array<MediaQueryList | null> = [];
   _layoutMQs: Array<MediaQueryList | null> = [];
+  _layoutMQMap: Map<string, string> = new Map(); // mq.media → config key
   _lastBackgroundImage?: string;
   _lastEvaluatedCss?: string;
   _trackedEntities: Set<string> = new Set();
@@ -59,13 +60,16 @@ class GridLayout extends LitElement {
       }
     }
 
-    // Layout-level media query listeners
+    // Layout-level media query listeners (resolve named breakpoints)
     this._layoutMQs.forEach(mq => mq?.removeEventListener("change", this._onLayoutMQChange));
     this._layoutMQs = [];
+    this._layoutMQMap.clear();
     if (this._config.layout?.mediaquery) {
-      for (const query of Object.keys(this._config.layout.mediaquery)) {
-        const mq = window.matchMedia(query);
+      for (const queryKey of Object.keys(this._config.layout.mediaquery)) {
+        const resolved = this._resolveMediaQuery(queryKey);
+        const mq = window.matchMedia(resolved);
         this._layoutMQs.push(mq);
+        this._layoutMQMap.set(mq.media, queryKey);
         mq.addEventListener("change", this._onLayoutMQChange);
       }
     }
@@ -73,6 +77,7 @@ class GridLayout extends LitElement {
     this._setGridStyles();
 
     if (this._rendered) {
+      this._updateStyles();
       this._createOverlays();
       this._updateOverlayStates();
     }
@@ -214,6 +219,12 @@ class GridLayout extends LitElement {
     });
   }
 
+  // ── Breakpoint resolution ────────────────────────────────────────────────
+
+  _resolveMediaQuery(key: string): string {
+    return this._config?.layout?.breakpoints?.[key] || key;
+  }
+
   // ── Grid styles ──────────────────────────────────────────────────────────
 
   _setGridStyles() {
@@ -229,7 +240,8 @@ class GridLayout extends LitElement {
     if (this._config?.layout) apply(this._config.layout);
     for (const mq of this._layoutMQs) {
       if (mq?.matches) {
-        apply(this._config.layout.mediaquery[mq.media]);
+        const configKey = this._layoutMQMap.get(mq.media) || mq.media;
+        apply(this._config.layout.mediaquery[configKey]);
         break;
       }
     }
@@ -267,15 +279,29 @@ class GridLayout extends LitElement {
         }`;
     }
 
+    let tintCss = "";
+    if (layout?.tint) {
+      tintCss = `#root { background-color: ${layout.tint}; }`;
+    }
+
+    let variablesCss = "";
+    if (layout?.variables) {
+      const vars = Object.entries(layout.variables)
+        .map(([k, v]) => `--${k}: ${v};`)
+        .join(" ");
+      variablesCss = `:host { ${vars} }`;
+    }
+
     let zoomCss = "";
     if (layout?.zoom != null) {
       zoomCss = `#root { zoom: ${layout.zoom}; }`;
     }
 
-    // Generate @media overrides for kiosk and zoom from mediaquery config
+    // Generate @media overrides from mediaquery config
     let mediaCss = "";
     if (layout?.mediaquery) {
-      for (const [query, overrides] of Object.entries(layout.mediaquery)) {
+      for (const [queryKey, overrides] of Object.entries(layout.mediaquery)) {
+        const resolved = this._resolveMediaQuery(queryKey);
         const rules: string[] = [];
         if (layout.kiosk && (overrides as any).kiosk === false) {
           rules.push(`
@@ -304,8 +330,52 @@ class GridLayout extends LitElement {
         if ((overrides as any).zoom != null) {
           rules.push(`#root { zoom: ${(overrides as any).zoom}; }`);
         }
+        if ((overrides as any).tint) {
+          rules.push(`#root { background-color: ${(overrides as any).tint}; }`);
+        }
+        if ((overrides as any).variables) {
+          const vars = Object.entries((overrides as any).variables)
+            .map(([k, v]) => `--${k}: ${v};`)
+            .join(" ");
+          rules.push(`:host { ${vars} }`);
+        }
+        if ((overrides as any).custom_css) {
+          rules.push(this._evaluateCssTemplates((overrides as any).custom_css));
+        }
         if (rules.length) {
-          mediaCss += `@media ${query} { ${rules.join("\n")} }`;
+          mediaCss += `@media ${resolved} { ${rules.join("\n")} }\n`;
+        }
+      }
+    }
+
+    // Per-section media query CSS
+    let sectionMediaCss = "";
+    const sections = this._config?.sections || [];
+    for (const section of sections) {
+      if (!section.mediaquery || !section.grid_area) continue;
+      for (const [queryKey, overrides] of Object.entries(section.mediaquery)) {
+        const resolved = this._resolveMediaQuery(queryKey);
+        const props: string[] = [];
+        const o = overrides as any;
+        if (o.tint) props.push(`background-color: ${o.tint} !important;`);
+        if (o.padding != null) props.push(`padding: ${o.padding} !important;`);
+        if (o.background) props.push(`background: ${o.background} !important;`);
+        if (o.backdrop_blur) {
+          props.push(`backdrop-filter: blur(${o.backdrop_blur}) !important;`);
+          props.push(`-webkit-backdrop-filter: blur(${o.backdrop_blur}) !important;`);
+        }
+        if (o.zoom != null) props.push(`zoom: ${o.zoom} !important;`);
+        if (o.overflow) props.push(`overflow: ${o.overflow} !important;`);
+        if (o.display) props.push(`display: ${o.display} !important;`);
+        let sectionRules = "";
+        if (props.length) {
+          sectionRules += `.section-${section.grid_area} { ${props.join(" ")} }`;
+        }
+        if (o.custom_css) {
+          sectionRules += "\n" + this._evaluateCssTemplates(o.custom_css);
+        }
+        if (sectionRules) {
+          sectionMediaCss += `@media ${resolved} { ${sectionRules} }\n`;
         }
       }
     }
@@ -327,9 +397,12 @@ class GridLayout extends LitElement {
         --layout-height: ${layout?.height ?? "auto"};
         --layout-overflow: ${layout?.height !== undefined ? "auto" : "visible"};
       }
+      ${variablesCss}
+      ${tintCss}
       ${kioskCss}
       ${zoomCss}
       ${mediaCss}
+      ${sectionMediaCss}
       ${customCss}
       ${overlayCss}`;
   }
@@ -727,6 +800,9 @@ class GridLayout extends LitElement {
       }
       if (sectionConfig.padding != null) {
         container.style.padding = String(sectionConfig.padding);
+      }
+      if (sectionConfig.tint) {
+        container.style.backgroundColor = sectionConfig.tint;
       }
 
       if (isEditMode && sectionConfig.grid_area) {

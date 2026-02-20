@@ -57,6 +57,8 @@ export interface SectionConfig {
   zoom?: number | string;
   overflow?: string;
   padding?: string;
+  tint?: string;
+  mediaquery?: Record<string, Record<string, any>>;
   [key: string]: any;
 }
 
@@ -71,6 +73,9 @@ export interface GridViewConfig {
     height?: string;
     kiosk?: boolean;
     zoom?: number | string;
+    tint?: string;
+    variables?: Record<string, string>;
+    breakpoints?: Record<string, string>;
     mediaquery?: Record<string, Record<string, any>>;
     custom_css?: string;
     background_image?: string;

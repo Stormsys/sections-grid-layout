@@ -83,7 +83,10 @@ sections:
 | `background_image` | string | Background image URL or Jinja template |
 | `background_blur` | string | CSS blur value e.g. `"8px"` |
 | `background_opacity` | number | 0–1 opacity for the background |
-| `mediaquery` | object | Responsive overrides (see below) |
+| `tint` | string | Semi-transparent background colour on the grid (e.g. `"#00000020"`) |
+| `variables` | object | CSS custom properties injected on `:host` (see below) |
+| `breakpoints` | object | Named media queries for reuse (see below) |
+| `mediaquery` | object | Responsive overrides — keys can be raw queries or named breakpoints (see below) |
 | `margin` | string | Outer margin of the grid |
 | `padding` | string | Inner padding of the grid |
 | `kiosk` | boolean | Fixed-position layout filling the viewport below the header |
@@ -101,6 +104,9 @@ Each section can have these additional properties alongside `grid_area`, `type`,
 | `backdrop_blur` | string | CSS blur value applied as `backdrop-filter` e.g. `"10px"` |
 | `zoom` | number/string | CSS zoom applied to this section (e.g. `0.85`) |
 | `overflow` | string | CSS overflow value (`hidden`, `auto`, `scroll`, etc.) |
+| `padding` | string | Section padding (default: `10px` via `--section-padding`) |
+| `tint` | string | Semi-transparent background colour (e.g. `"#20293cdd"`) |
+| `mediaquery` | object | Per-section responsive overrides (see below) |
 
 ```yaml
 sections:
@@ -205,19 +211,102 @@ layout:
 
 In edit mode a small **Overlays** panel appears in the bottom-right corner with a **Test** button for each overlay, letting you preview the animation without waiting for the real entity to trigger. The panel can be collapsed with the **−** button.
 
-### Responsive layouts
+### Tint
 
-Keys under `mediaquery` are CSS media query strings; values are layout overrides applied when the query matches:
+Apply a semi-transparent background colour to darken (or colour) the view behind cards. Works on both the root grid and individual sections:
 
 ```yaml
 layout:
-  grid-template-areas: '"left right"'
-  grid-template-columns: 1fr 1fr
+  tint: "#00000020"          # darken the whole view slightly
+sections:
+  - grid_area: sidebar
+    tint: "#20293cdd"        # darker tint on this section
+```
+
+### CSS Variables
+
+Define reusable CSS custom properties via `variables`. These are injected on `:host` and available throughout the view:
+
+```yaml
+layout:
+  variables:
+    background-color-2: "#20293cdd"
+    card-gap: "8px"
+  custom_css: |
+    .my-card { background: var(--background-color-2); }
+    #root { gap: var(--card-gap); }
+```
+
+Variables can also be overridden per-breakpoint inside `mediaquery` (see below).
+
+### Named breakpoints
+
+Define named breakpoints once and reuse them everywhere — in `layout.mediaquery` and per-section `mediaquery`:
+
+```yaml
+layout:
+  breakpoints:
+    mobile: "(max-width: 768px)"
+    tablet: "(max-width: 1024px)"
   mediaquery:
-    "(max-width: 600px)":
-      grid-template-areas: '"left" "right"'
+    mobile:                          # ← use the name, not the raw query
       grid-template-columns: 1fr
 ```
+
+Raw query strings still work alongside named breakpoints.
+
+### Responsive layouts
+
+Keys under `mediaquery` are CSS media query strings **or named breakpoints**; values are layout overrides applied when the query matches.
+
+Layout-level `mediaquery` supports: grid properties, `kiosk`, `zoom`, `tint`, `variables`, and `custom_css`.
+
+```yaml
+layout:
+  breakpoints:
+    mobile: "(max-width: 768px)"
+  grid-template-areas: '"left right"'
+  grid-template-columns: 1fr 1fr
+  tint: "#00000020"
+  variables:
+    sidebar-bg: "#20293cdd"
+  mediaquery:
+    mobile:
+      grid-template-areas: '"left" "right"'
+      grid-template-columns: 1fr
+      tint: "#00000040"
+      variables:
+        sidebar-bg: "#10152080"
+      custom_css: |
+        .section-sidebar { display: none; }
+```
+
+### Per-section media queries
+
+Sections can have their own responsive overrides. Properties are applied with `!important` so they override the base inline styles:
+
+```yaml
+layout:
+  breakpoints:
+    mobile: "(max-width: 768px)"
+sections:
+  - grid_area: sidebar
+    tint: "#20293cdd"
+    padding: 16px
+    mediaquery:
+      mobile:
+        tint: "#10152080"
+        padding: 4px
+        display: none            # hide on mobile
+  - grid_area: main
+    mediaquery:
+      mobile:
+        padding: 0px
+        custom_css: |
+          .section-main hui-section { --column-count: 1; }
+```
+
+Supported per-section mediaquery properties: `tint`, `padding`, `background`, `backdrop_blur`, `zoom`, `overflow`, `display`, and `custom_css`.
 
 ---
 
