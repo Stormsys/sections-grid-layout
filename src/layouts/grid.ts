@@ -725,6 +725,9 @@ class GridLayout extends LitElement {
       if (sectionConfig.overflow) {
         container.style.overflow = sectionConfig.overflow;
       }
+      if (sectionConfig.padding != null) {
+        container.style.padding = String(sectionConfig.padding);
+      }
 
       if (isEditMode && sectionConfig.grid_area) {
         const label = document.createElement("div");
@@ -1137,6 +1140,7 @@ class GridLayout extends LitElement {
         position: relative;
         display: flex;
         flex-direction: column;
+        padding: var(--section-padding, 10px);
       }
       .section-container.scrollable {
         overflow-y: auto;

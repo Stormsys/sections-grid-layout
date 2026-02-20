@@ -56,6 +56,7 @@ export interface SectionConfig {
   backdrop_blur?: string;
   zoom?: number | string;
   overflow?: string;
+  padding?: string;
   [key: string]: any;
 }
 
