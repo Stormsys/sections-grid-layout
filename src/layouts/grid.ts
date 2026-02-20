@@ -466,6 +466,12 @@ class GridLayout extends LitElement {
       const collapsed = tester.classList.toggle("collapsed");
       minimizeBtn.textContent = collapsed ? "+" : "−";
       minimizeBtn.title = collapsed ? "Expand" : "Minimize";
+      // Directly toggle visibility so we don't rely on CSS alone
+      title.style.display = collapsed ? "none" : "";
+      body.style.display = collapsed ? "none" : "";
+      tester.style.minWidth = collapsed ? "0" : "";
+      tester.style.padding = collapsed ? "4px" : "";
+      tester.style.borderRadius = collapsed ? "50%" : "";
     });
 
     header.append(title, minimizeBtn);
@@ -880,25 +886,6 @@ class GridLayout extends LitElement {
   // ── Section editor ──────────────────────────────────────────────────────
 
   _openSectionEditor(gridArea: string, _sectionIndex: number) {
-    // Find the hui-section inside the matching section-container and
-    // click its native edit button (the hamburger / pencil in its shadow DOM).
-    const container = this.shadowRoot?.querySelector(
-      `.section-container[data-grid-area="${gridArea}"]`
-    );
-    const section = container?.querySelector("hui-section") as any;
-    if (section?.shadowRoot) {
-      // HA's hui-section renders an edit toolbar; look for common button selectors
-      const editBtn =
-        section.shadowRoot.querySelector(".header .action-buttons button") ??
-        section.shadowRoot.querySelector(".container .header button") ??
-        section.shadowRoot.querySelector("ha-icon-button") ??
-        section.shadowRoot.querySelector("button");
-      if (editBtn) {
-        (editBtn as HTMLElement).click();
-        return;
-      }
-    }
-    // Fallback to simple YAML editor
     this._openSectionYamlEditor(gridArea);
   }
 
