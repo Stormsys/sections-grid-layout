@@ -1,4 +1,4 @@
-import { css, html, LitElement } from "lit";
+import { html, LitElement } from "lit";
 import { property } from "lit/decorators.js";
 import {
   CardConfig,
@@ -6,15 +6,12 @@ import {
   GridViewConfig,
   HuiCard,
   LovelaceCard,
-  OverlayConfig,
 } from "../types";
 import {
   evaluateCssTemplates,
-  evaluateOverlayContent,
   extractEntitiesFromTemplate,
 } from "../template";
-import { detectAllGridAreas, formatAreaName, ensureSectionsForAllAreas } from "../grid-utils";
-import { sectionConfigToYaml, parseYaml } from "../yaml";
+import { detectAllGridAreas, ensureSectionsForAllAreas } from "../grid-utils";
 import {
   resolveMediaQuery,
   extractGridProperties,
@@ -29,10 +26,25 @@ import {
   computeSectionStyles,
   computeSectionVariables,
   computeSectionClasses,
-  computeOverlayStyles,
-  getOverlayAnimation,
-  isOverlayActive,
 } from "../styles";
+import { gridStyles } from "./grid-styles";
+import { BackgroundManager } from "../managers/background-manager";
+import { OverlayManager } from "../managers/overlay-manager";
+import { SectionConfigManager } from "../managers/section-config-manager";
+import {
+  ROOT_ID,
+  LAYOUT_STYLES_ID,
+  CLASS_EDIT_MODE,
+  CLASS_SECTION_GRID_LABEL,
+  CLASS_SECTION_GRID_LABEL_TEXT,
+  CLASS_SECTION_GRID_EDIT_OVERLAY,
+  CLASS_LOOSE_CARDS_CONTAINER,
+  CLASS_LOOSE_CARDS_HEADER,
+  CLASS_LOOSE_CARDS_TITLE,
+  CLASS_LOOSE_CARDS_SUBTITLE,
+  CLASS_LOOSE_CARDS_WRAPPER,
+  ATTR_GRID_AREA,
+} from "../constants";
 
 class GridLayout extends LitElement {
   // ── External properties set by HA ───────────────────────────────────────
@@ -47,17 +59,17 @@ class GridLayout extends LitElement {
   _config: GridViewConfig;
   _mediaQueries: Array<MediaQueryList | null> = [];
   _layoutMQs: Array<MediaQueryList | null> = [];
-  _layoutMQMap: Map<string, string> = new Map(); // mq.media → config key
-  _lastBackgroundImage?: string;
+  _layoutMQMap: Map<string, string> = new Map();
   _lastEvaluatedCss?: string;
   _trackedEntities: Set<string> = new Set();
   _sectionsCache: Map<number, any> = new Map();
   _updateQueued: boolean = false;
-  _savingConfig: boolean = false;
-  _overlayStates: Map<number, boolean> = new Map();
   _rendered: boolean = false;
-  _dialogObserver: MutationObserver | null = null;
-  _bgElementId: string = `sgl-bg-${Math.random().toString(36).slice(2, 8)}`;
+
+  // ── Managers ────────────────────────────────────────────────────────────
+  _backgroundManager: BackgroundManager;
+  _overlayManager: OverlayManager;
+  _sectionConfigManager = new SectionConfigManager();
 
   // Stable bound handlers so addEventListener/removeEventListener match
   _onCardMQChange = () => this._placeCards();
@@ -67,13 +79,11 @@ class GridLayout extends LitElement {
 
   async setConfig(config: GridViewConfig) {
     this._config = { ...config };
-    // Allow `view_layout:` as an alias for `layout:`
     if (this._config.view_layout && this._config.layout === undefined) {
       this._config.layout = this._config.view_layout;
     }
 
-    // Per-card media query listeners (view-level cards only; normally empty
-    // in sections mode but kept for backward compat)
+    // Per-card media query listeners
     this._mediaQueries.forEach(mq => mq?.removeEventListener("change", this._onCardMQChange));
     this._mediaQueries = [];
     for (const card of (this._config.cards || [])) {
@@ -86,13 +96,13 @@ class GridLayout extends LitElement {
       }
     }
 
-    // Layout-level media query listeners (resolve named breakpoints)
+    // Layout-level media query listeners
     this._layoutMQs.forEach(mq => mq?.removeEventListener("change", this._onLayoutMQChange));
     this._layoutMQs = [];
     this._layoutMQMap.clear();
     if (this._config.layout?.mediaquery) {
       for (const queryKey of Object.keys(this._config.layout.mediaquery)) {
-        const resolved = this._resolveMediaQuery(queryKey);
+        const resolved = resolveMediaQuery(queryKey, this._config?.layout?.breakpoints);
         const mq = window.matchMedia(resolved);
         this._layoutMQs.push(mq);
         this._layoutMQMap.set(mq.media, queryKey);
@@ -104,40 +114,38 @@ class GridLayout extends LitElement {
 
     if (this._rendered) {
       this._updateStyles();
-      this._createOverlays();
-      this._updateOverlayStates();
+      this._overlayManager?.createOverlays(this._config?.layout?.overlays, this._editMode);
+      this._overlayManager?.updateStates(this._config?.layout?.overlays, this.hass);
     }
   }
 
   async updated(changedProperties: Map<string, any>) {
-    // Edit mode: propagate to view-level cards and update internal flag
     const editModeChanged =
       changedProperties.has("lovelace") &&
       this.lovelace?.editMode !== changedProperties.get("lovelace")?.editMode;
     if (editModeChanged) {
       this.cards.forEach((c) => (c.editMode = this.lovelace?.editMode));
       this._editMode = this.lovelace?.editMode ?? false;
-      this._createOverlays(); // call directly here — reliable, no secondary property-change cycle needed
+      this._overlayManager?.createOverlays(this._config?.layout?.overlays, this._editMode);
     }
 
-    // Keep CSS class in sync with edit mode
-    const root = this.shadowRoot?.querySelector("#root") as HTMLElement;
-    if (root) root.classList.toggle("edit-mode", !!this.lovelace?.editMode);
+    const root = this.shadowRoot?.querySelector(`#${ROOT_ID}`) as HTMLElement;
+    if (root) root.classList.toggle(CLASS_EDIT_MODE, !!this.lovelace?.editMode);
 
-    // Hass: propagate to sections; re-evaluate templates if tracked entities changed
     if (changedProperties.has("hass")) {
       this._queueSectionHassUpdate();
+      if (this._overlayManager) this._overlayManager.hass = this.hass;
       if (this._hasTrackedEntitiesChanged(changedProperties)) {
         const layout = this._config?.layout;
         if (layout?.background_image &&
             (layout.background_image.includes("{{") || layout.background_image.includes("{%"))) {
-          this._evaluateTemplate();
+          this._backgroundManager?.evaluateTemplate(layout, this.hass);
         }
         if (layout?.custom_css &&
             (layout.custom_css.includes("{{") || layout.custom_css.includes("{%"))) {
           this._updateStyles();
         }
-        this._updateOverlayStates();
+        this._overlayManager?.updateStates(this._config?.layout?.overlays, this.hass);
       }
     }
 
@@ -149,7 +157,12 @@ class GridLayout extends LitElement {
     } else if (changedProperties.has("_editMode")) {
       this._sectionsCache.clear();
       if (this._editMode) {
-        this._ensureAllSectionsExistInConfig();
+        this._sectionConfigManager.ensureAllSectionsExistInConfig(
+          this._config.layout?.["grid-template-areas"],
+          this.lovelace,
+          this.index,
+          () => this._placeCards()
+        );
       } else {
         this._placeCards();
       }
@@ -160,42 +173,45 @@ class GridLayout extends LitElement {
     this._rendered = true;
     this._setGridStyles();
     this._extractEntitiesFromTemplates();
-    this._setupTemplateSubscription();
 
+    // Background manager
+    this._backgroundManager = new BackgroundManager(this);
+    if (this._config.layout) {
+      this._backgroundManager.setup(this._config.layout, this.hass);
+    }
+
+    // Dynamic styles
     const styleEl = document.createElement("style");
-    styleEl.id = "layout-styles";
+    styleEl.id = LAYOUT_STYLES_ID;
     this.shadowRoot.appendChild(styleEl);
     this._updateStyles();
 
-    this._createOverlays();
-    if (this.hass) this._updateOverlayStates();
+    // Overlay manager
+    this._overlayManager = new OverlayManager(this.shadowRoot);
+    this._overlayManager.hass = this.hass;
+    this._overlayManager.createOverlays(this._config?.layout?.overlays, this._editMode);
+    if (this.hass) this._overlayManager.updateStates(this._config?.layout?.overlays, this.hass);
+    this._overlayManager.setupDialogObserver();
 
-    if (this.lovelace?.editMode) this._ensureAllSectionsExistInConfig();
-    this._setupDialogObserver();
+    if (this.lovelace?.editMode) {
+      this._sectionConfigManager.ensureAllSectionsExistInConfig(
+        this._config.layout?.["grid-template-areas"],
+        this.lovelace,
+        this.index,
+        () => this._placeCards()
+      );
+    }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this._mediaQueries.forEach(mq => mq?.removeEventListener("change", this._onCardMQChange));
     this._layoutMQs.forEach(mq => mq?.removeEventListener("change", this._onLayoutMQChange));
-    this._overlayStates.clear();
-    this._dialogObserver?.disconnect();
-    this._dialogObserver = null;
-    this._removeBackground();
+    this._overlayManager?.destroy();
+    this._backgroundManager?.destroy();
   }
 
-  _setupDialogObserver() {
-    if (this._dialogObserver) return;
-    this._dialogObserver = new MutationObserver(() => {
-      const tester = this.shadowRoot?.querySelector(".sgl-overlay-tester") as HTMLElement;
-      if (!tester) return;
-      const dialogOpen = !!document.querySelector("ha-dialog, ha-more-info-dialog, dialog[open]");
-      tester.style.display = dialogOpen ? "none" : "";
-    });
-    this._dialogObserver.observe(document.body, { childList: true, subtree: true });
-  }
-
-  // ── Card helpers (used for view-level loose cards) ────────────────────────
+  // ── Card helpers ─────────────────────────────────────────────────────────
 
   _shouldShow(card: LovelaceCard | HuiCard, config: CardConfig, index: number): boolean {
     if (config.view_layout?.show === "always") return true;
@@ -246,16 +262,10 @@ class GridLayout extends LitElement {
     });
   }
 
-  // ── Breakpoint resolution ────────────────────────────────────────────────
-
-  _resolveMediaQuery(key: string): string {
-    return resolveMediaQuery(key, this._config?.layout?.breakpoints);
-  }
-
   // ── Grid styles ──────────────────────────────────────────────────────────
 
   _setGridStyles() {
-    const root = this.shadowRoot?.querySelector("#root") as HTMLElement;
+    const root = this.shadowRoot?.querySelector(`#${ROOT_ID}`) as HTMLElement;
     if (!root) return;
     root.style.cssText = "";
     const apply = (layout: Record<string, any>) => {
@@ -274,7 +284,7 @@ class GridLayout extends LitElement {
   }
 
   _updateStyles() {
-    const styleEl = this.shadowRoot?.querySelector("#layout-styles") as HTMLStyleElement;
+    const styleEl = this.shadowRoot?.querySelector(`#${LAYOUT_STYLES_ID}`) as HTMLStyleElement;
     if (!styleEl) return;
     const layout = this._config?.layout;
     const evalCss = (css: string) => this._evaluateCssTemplates(css);
@@ -343,241 +353,10 @@ class GridLayout extends LitElement {
     return out;
   }
 
-  // ── Overlays ─────────────────────────────────────────────────────────
-
-  _createOverlays() {
-    this.shadowRoot.querySelectorAll(".sgl-overlay").forEach(el => el.remove());
-    this.shadowRoot.querySelectorAll(".sgl-overlay-tester").forEach(el => el.remove());
-    this._overlayStates.clear();
-
-    const overlays = this._config?.layout?.overlays;
-    if (!overlays?.length) return;
-
-    for (let i = 0; i < overlays.length; i++) {
-      const cfg = overlays[i];
-
-      const el = document.createElement("div");
-      el.className = "sgl-overlay";
-      el.setAttribute("data-overlay-index", String(i));
-      el.setAttribute("data-animation", getOverlayAnimation(cfg));
-
-      // CSS variables for animation customisation
-      for (const [prop, val] of Object.entries(computeOverlayStyles(cfg))) {
-        el.style.setProperty(prop, val);
-      }
-
-      const contentEl = document.createElement("div");
-      contentEl.className = "sgl-overlay-content";
-      if (cfg.text_shadow) contentEl.style.textShadow = cfg.text_shadow;
-      el.appendChild(contentEl);
-
-      this.shadowRoot.appendChild(el);
-    }
-
-    // Edit mode: show test panel
-    if (this._editMode) this._createOverlayTester(overlays);
-  }
-
-  _createOverlayTester(overlays: OverlayConfig[]) {
-    const tester = document.createElement("div");
-    tester.className = "sgl-overlay-tester";
-
-    const header = document.createElement("div");
-    header.className = "sgl-overlay-tester-header";
-
-    const title = document.createElement("div");
-    title.className = "sgl-overlay-tester-title";
-    title.textContent = "Overlays";
-
-    const minimizeBtn = document.createElement("button");
-    minimizeBtn.className = "sgl-overlay-tester-minimize";
-    minimizeBtn.textContent = "−";
-    minimizeBtn.title = "Minimize";
-    minimizeBtn.addEventListener("click", () => {
-      const collapsed = tester.classList.toggle("collapsed");
-      minimizeBtn.textContent = collapsed ? "+" : "−";
-      minimizeBtn.title = collapsed ? "Expand" : "Minimize";
-      // Directly toggle visibility so we don't rely on CSS alone
-      title.style.display = collapsed ? "none" : "";
-      body.style.display = collapsed ? "none" : "";
-      tester.style.minWidth = collapsed ? "0" : "";
-      tester.style.padding = collapsed ? "4px" : "";
-      tester.style.borderRadius = collapsed ? "50%" : "";
-    });
-
-    header.append(title, minimizeBtn);
-    tester.appendChild(header);
-
-    const body = document.createElement("div");
-    body.className = "sgl-overlay-tester-body";
-
-    for (let i = 0; i < overlays.length; i++) {
-      const cfg = overlays[i];
-      const row = document.createElement("div");
-      row.className = "sgl-overlay-tester-row";
-
-      const label = document.createElement("span");
-      label.className = "sgl-overlay-tester-label";
-      label.textContent = `${cfg.content || "overlay"} — ${cfg.entity}`;
-
-      const btn = document.createElement("button");
-      btn.className = "sgl-overlay-tester-btn";
-      btn.textContent = "Test";
-      btn.addEventListener("click", () => this._testOverlay(i));
-
-      row.append(label, btn);
-      body.appendChild(row);
-    }
-
-    tester.appendChild(body);
-    this.shadowRoot.appendChild(tester);
-  }
-
-  _testOverlay(index: number) {
-    const el = this.shadowRoot.querySelector(
-      `.sgl-overlay[data-overlay-index="${index}"]`
-    ) as HTMLElement;
-    if (!el) return;
-
-    // Update content before testing
-    const cfg = this._config?.layout?.overlays?.[index];
-    if (cfg?.content) {
-      const contentEl = el.querySelector(".sgl-overlay-content") as HTMLElement;
-      if (contentEl) contentEl.textContent = this._evaluateOverlayContent(cfg.content);
-    }
-
-    el.classList.remove("active");
-    void el.offsetWidth; // force reflow to restart animation
-    el.classList.add("active");
-
-    // Auto-remove active class after animation ends
-    const duration = parseFloat(cfg?.duration || "3") * 1000;
-    setTimeout(() => el.classList.remove("active"), duration + 100);
-  }
-
-  _updateOverlayStates() {
-    const overlays = this._config?.layout?.overlays;
-    if (!overlays?.length || !this.hass) return;
-
-    for (let i = 0; i < overlays.length; i++) {
-      const cfg = overlays[i];
-      const currentState = this.hass.states[cfg.entity]?.state;
-      const active = isOverlayActive(cfg, currentState);
-      const wasActive = this._overlayStates.get(i) ?? false;
-
-      const el = this.shadowRoot.querySelector(
-        `.sgl-overlay[data-overlay-index="${i}"]`
-      ) as HTMLElement;
-      if (!el) continue;
-
-      // Update content (may have Jinja templates)
-      const contentEl = el.querySelector(".sgl-overlay-content") as HTMLElement;
-      if (contentEl && cfg.content) {
-        contentEl.textContent = this._evaluateOverlayContent(cfg.content);
-      }
-
-      if (active && !wasActive) {
-        el.classList.remove("active");
-        void el.offsetWidth; // force reflow to restart animation
-        el.classList.add("active");
-      } else if (!active && wasActive) {
-        el.classList.remove("active");
-      }
-
-      this._overlayStates.set(i, active);
-    }
-  }
-
-  _evaluateOverlayContent(content: string): string {
-    if (!this.hass) return content || "";
-    return evaluateOverlayContent(content, this.hass.states);
-  }
-
-  // ── Background image ─────────────────────────────────────────────────────
-
-  _setupTemplateSubscription() {
-    const template = this._config.layout?.background_image;
-    if (!template) return;
-    if (!template.includes("{{") && !template.includes("{%")) {
-      this._updateBackgroundWithImage(template);
-      return;
-    }
-    this._evaluateTemplate();
-  }
-
-  _evaluateTemplate() {
-    const template = this._config.layout?.background_image;
-    if (!template || !this.hass) return;
-    try {
-      const statesMatch = template.match(/states\(['"]([^'"]+)['"]\)/);
-      if (statesMatch) {
-        const val = this.hass.states[statesMatch[1]]?.state;
-        if (val && val !== "unknown" && val !== "unavailable") this._updateBackgroundWithImage(val);
-        return;
-      }
-      const attrMatch = template.match(/state_attr\(['"]([^'"]+)['"],\s*['"]([^'"]+)['"]\)/);
-      if (attrMatch) {
-        const val = this.hass.states[attrMatch[1]]?.attributes?.[attrMatch[2]];
-        if (val) this._updateBackgroundWithImage(val);
-        return;
-      }
-      this._updateBackgroundWithImage(template);
-    } catch {
-      this._updateBackgroundWithImage(template);
-    }
-  }
-
-  _updateBackgroundWithImage(bgImage: string) {
-    if (!bgImage || bgImage === "null" || bgImage === "undefined") return;
-    if (bgImage === this._lastBackgroundImage) return;
-    this._lastBackgroundImage = bgImage;
-
-    const blur = this._config.layout?.background_blur || "0px";
-    const opacity = this._config.layout?.background_opacity ?? 1;
-    const headerHeight = this._getHeaderHeight();
-
-    // Attach to document.body so position:fixed is relative to the viewport,
-    // not broken by ancestor transforms/filters inside HA's layout containers.
-    let bgEl = document.getElementById(this._bgElementId);
-    if (!bgEl) {
-      bgEl = document.createElement("div");
-      bgEl.id = this._bgElementId;
-      Object.assign(bgEl.style, {
-        position: "fixed", left: "0", right: "0", bottom: "0",
-        backgroundPosition: "center", backgroundRepeat: "no-repeat",
-        backgroundSize: "cover", zIndex: "-1",
-        pointerEvents: "none",
-      });
-      document.body.appendChild(bgEl);
-    }
-    bgEl.style.top = `${headerHeight}px`;
-    bgEl.style.backgroundImage = `url('${bgImage}')`;
-    bgEl.style.filter = `blur(${blur})`;
-    bgEl.style.opacity = opacity.toString();
-  }
-
-  _removeBackground() {
-    document.getElementById(this._bgElementId)?.remove();
-    this._lastBackgroundImage = undefined;
-  }
-
-  _getHeaderHeight(): number {
-    if (this.closest("hui-panel-view")) return 0;
-    const candidates = [
-      document.querySelector("app-header"),
-      document.querySelector(".header"),
-      document.querySelector("ha-app-layout")?.querySelector("[slot='header']"),
-    ];
-    for (const el of candidates) {
-      if (el) return (el as HTMLElement).getBoundingClientRect().height;
-    }
-    return 0;
-  }
-
   // ── Card / section placement ──────────────────────────────────────────────
 
   async _placeCards() {
-    const root = this.shadowRoot.querySelector("#root") as HTMLElement;
+    const root = this.shadowRoot.querySelector(`#${ROOT_ID}`) as HTMLElement;
     while (root.firstChild) root.removeChild(root.firstChild);
 
     if (this._config.sections?.length > 0) {
@@ -585,7 +364,6 @@ class GridLayout extends LitElement {
       return;
     }
 
-    // Fallback: view-level cards placed by grid-area (no sections defined)
     for (const [index, card] of (this.cards || []).entries()) {
       const config = (this._config.cards || [])[index];
       if (!config) continue;
@@ -605,8 +383,8 @@ class GridLayout extends LitElement {
 
   async _placeNativeSections(root: Element) {
     const isEditMode = this.lovelace?.editMode;
-    const allGridAreas = this._detectAllGridAreas();
-    const sectionsToRender = this._ensureSectionsForAllAreas(allGridAreas);
+    const allGridAreas = detectAllGridAreas(this._config.layout?.["grid-template-areas"]);
+    const sectionsToRender = ensureSectionsForAllAreas(allGridAreas, this._config.sections || []);
 
     const liveSections: any[] =
       (this.lovelace?.config?.views?.[this.index]?.sections as any[]) ??
@@ -615,7 +393,6 @@ class GridLayout extends LitElement {
     for (let i = 0; i < sectionsToRender.length; i++) {
       const sectionConfig = sectionsToRender[i];
 
-      // Skip empty sections outside edit mode
       if (!isEditMode && (!sectionConfig.cards || sectionConfig.cards.length === 0)) continue;
 
       const configIndex = liveSections.findIndex(
@@ -627,10 +404,9 @@ class GridLayout extends LitElement {
       container.className = computeSectionClasses(sectionConfig, !!isEditMode).join(" ");
 
       if (sectionConfig.grid_area) {
-        container.setAttribute("data-grid-area", sectionConfig.grid_area);
+        container.setAttribute(ATTR_GRID_AREA, sectionConfig.grid_area);
       }
 
-      // Per-section styling
       for (const [prop, val] of Object.entries(computeSectionStyles(sectionConfig))) {
         container.style.setProperty(prop, val);
       }
@@ -640,19 +416,21 @@ class GridLayout extends LitElement {
 
       if (isEditMode && sectionConfig.grid_area) {
         const label = document.createElement("div");
-        label.className = "section-grid-label";
+        label.className = CLASS_SECTION_GRID_LABEL;
         label.addEventListener("click", (e) => {
           e.stopPropagation();
-          this._openSectionEditor(sectionConfig.grid_area, sectionIndex);
+          this._sectionConfigManager.openSectionYamlEditor(
+            sectionConfig.grid_area, this.shadowRoot, this.lovelace, this.index, this.hass
+          );
         });
 
         const nameSpan = document.createElement("span");
-        nameSpan.className = "section-grid-label-text";
+        nameSpan.className = CLASS_SECTION_GRID_LABEL_TEXT;
         nameSpan.textContent = sectionConfig.grid_area;
         label.appendChild(nameSpan);
 
         const editOverlay = document.createElement("div");
-        editOverlay.className = "section-grid-edit-overlay";
+        editOverlay.className = CLASS_SECTION_GRID_EDIT_OVERLAY;
         editOverlay.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>`;
         label.appendChild(editOverlay);
 
@@ -663,41 +441,28 @@ class GridLayout extends LitElement {
       root.appendChild(container);
     }
 
-    // In edit mode show any view-level cards that aren't in sections
     if (isEditMode && this.cards?.length > 0) {
       root.appendChild(this._createLooseCardsContainer());
     }
   }
 
-  _detectAllGridAreas(): string[] {
-    return detectAllGridAreas(this._config.layout?.["grid-template-areas"]);
-  }
-
-  _ensureSectionsForAllAreas(allGridAreas: string[]): any[] {
-    return ensureSectionsForAllAreas(allGridAreas, this._config.sections || []);
-  }
-
-  _formatAreaName(area: string): string {
-    return formatAreaName(area);
-  }
-
   _createLooseCardsContainer(): HTMLElement {
     const container = document.createElement("div");
-    container.className = "loose-cards-container";
+    container.className = CLASS_LOOSE_CARDS_CONTAINER;
 
     const header = document.createElement("div");
-    header.className = "loose-cards-header";
+    header.className = CLASS_LOOSE_CARDS_HEADER;
     const title = document.createElement("span");
-    title.className = "loose-cards-title";
+    title.className = CLASS_LOOSE_CARDS_TITLE;
     title.textContent = "Unassigned Cards";
     const subtitle = document.createElement("span");
-    subtitle.className = "loose-cards-subtitle";
+    subtitle.className = CLASS_LOOSE_CARDS_SUBTITLE;
     subtitle.textContent = "Drag these cards into sections above";
     header.append(title, subtitle);
     container.appendChild(header);
 
     const wrapper = document.createElement("div");
-    wrapper.className = "loose-cards-wrapper";
+    wrapper.className = CLASS_LOOSE_CARDS_WRAPPER;
     (this.cards || []).forEach((card, index) => {
       const config = (this._config.cards || [])[index];
       if (!config) return;
@@ -718,191 +483,15 @@ class GridLayout extends LitElement {
     section.config = config;
     section.addEventListener("config-changed", (e: CustomEvent) => {
       e.stopPropagation();
-      this._handleSectionConfigChanged(config.grid_area, e.detail.config);
+      this._sectionConfigManager.handleSectionConfigChanged(
+        config.grid_area, e.detail.config, this.lovelace, this.index
+      );
     });
     section.addEventListener("ll-delete-section", (e: CustomEvent) => {
       e.stopPropagation();
-      this._handleDeleteSection(config.grid_area);
+      this._sectionConfigManager.handleDeleteSection(config.grid_area, this.lovelace, this.index);
     });
     return section;
-  }
-
-  // ── Section config management ─────────────────────────────────────────────
-
-  _handleSectionConfigChanged(gridArea: string, newSectionConfig: any) {
-    if (!this.lovelace || this._savingConfig) return;
-    const sections = [...(this.lovelace.config.views[this.index].sections as any[] || [])];
-    const idx = sections.findIndex((s: any) => s.grid_area === gridArea);
-    const updated = { ...newSectionConfig, grid_area: gridArea };
-    if (idx >= 0) sections[idx] = updated;
-    else sections.push(updated);
-    this._saveViewSections(sections);
-  }
-
-  _handleDeleteSection(gridArea: string) {
-    if (!this.lovelace || this._savingConfig) return;
-    const sections = ((this.lovelace.config.views[this.index].sections as any[]) || [])
-      .filter((s: any) => s.grid_area !== gridArea);
-    this._saveViewSections(sections);
-  }
-
-  async _ensureAllSectionsExistInConfig() {
-    if (!this.lovelace || this._savingConfig) {
-      this._placeCards();
-      return;
-    }
-    const allGridAreas = this._detectAllGridAreas();
-    if (!allGridAreas.length) { this._placeCards(); return; }
-
-    const existing: any[] = (this.lovelace.config.views[this.index].sections as any[]) || [];
-    const existingAreas = new Set(existing.map((s: any) => s.grid_area).filter(Boolean));
-    const toAdd = allGridAreas.filter(a => !existingAreas.has(a));
-    if (!toAdd.length) { this._placeCards(); return; }
-
-    await this._saveViewSections([
-      ...existing,
-      ...toAdd.map(area => ({ type: "grid", title: this._formatAreaName(area), grid_area: area, cards: [] })),
-    ]);
-  }
-
-  async _saveViewSections(sections: any[]) {
-    if (!this.lovelace || this._savingConfig) return;
-    this._savingConfig = true;
-    try {
-      const views = [...this.lovelace.config.views];
-      views[this.index] = { ...views[this.index], sections };
-      await this.lovelace.saveConfig({ ...this.lovelace.config, views });
-    } catch (e) {
-      console.error("sections-grid-layout: failed to save section config", e);
-    } finally {
-      this._savingConfig = false;
-    }
-  }
-
-  // ── Section editor ──────────────────────────────────────────────────────
-
-  _openSectionEditor(gridArea: string, _sectionIndex: number) {
-    this._openSectionYamlEditor(gridArea);
-  }
-
-  _sectionConfigToYaml(config: any): string {
-    return sectionConfigToYaml(config);
-  }
-
-  _parseYaml(yaml: string): Record<string, any> | null {
-    return parseYaml(yaml);
-  }
-
-  _openSectionYamlEditor(gridArea: string) {
-    // Remove any existing editor
-    this.shadowRoot.querySelector(".sgl-yaml-editor")?.remove();
-
-    const liveSections: any[] =
-      (this.lovelace?.config?.views?.[this.index]?.sections as any[]) ?? [];
-    const sectionConfig = liveSections.find((s: any) => s.grid_area === gridArea) || {};
-
-    // Strip 'cards' — those are managed by the card editor, not here
-    const editableConfig: Record<string, any> = {};
-    for (const [key, value] of Object.entries(sectionConfig)) {
-      if (key !== "cards") editableConfig[key] = value;
-    }
-
-    // Track the current parsed value (object) or raw text (string)
-    let currentParsed: Record<string, any> | null = editableConfig;
-    let currentText: string = this._sectionConfigToYaml(editableConfig);
-
-    const backdrop = document.createElement("div");
-    backdrop.className = "sgl-yaml-editor";
-
-    const dialog = document.createElement("div");
-    dialog.className = "sgl-yaml-dialog";
-
-    const header = document.createElement("div");
-    header.className = "sgl-yaml-header";
-    header.textContent = `Edit Section: ${gridArea}`;
-
-    const editorContainer = document.createElement("div");
-    editorContainer.className = "sgl-yaml-editor-container";
-
-    // Prefer ha-yaml-editor (handles object <-> YAML automatically),
-    // then ha-code-editor, then plain textarea
-    const useYamlEditor = !!customElements.get("ha-yaml-editor");
-    const useCodeEditor = !useYamlEditor && !!customElements.get("ha-code-editor");
-
-    if (useYamlEditor) {
-      const yamlEditor = document.createElement("ha-yaml-editor") as any;
-      yamlEditor.defaultValue = editableConfig;
-      if (this.hass) yamlEditor.hass = this.hass;
-      yamlEditor.addEventListener("value-changed", (e: CustomEvent) => {
-        currentParsed = e.detail.value ?? null;
-        currentText = "";
-      });
-      editorContainer.appendChild(yamlEditor);
-    } else if (useCodeEditor) {
-      const codeEditor = document.createElement("ha-code-editor") as any;
-      codeEditor.mode = "yaml";
-      codeEditor.autofocus = true;
-      codeEditor.autocompleteEntities = true;
-      codeEditor.value = currentText;
-      if (this.hass) codeEditor.hass = this.hass;
-      codeEditor.addEventListener("value-changed", (e: CustomEvent) => {
-        currentText = e.detail.value ?? "";
-        currentParsed = null;
-      });
-      editorContainer.appendChild(codeEditor);
-    } else {
-      const textarea = document.createElement("textarea");
-      textarea.className = "sgl-yaml-textarea";
-      textarea.value = currentText;
-      textarea.spellcheck = false;
-      textarea.addEventListener("input", () => {
-        currentText = textarea.value;
-        currentParsed = null;
-      });
-      editorContainer.appendChild(textarea);
-      requestAnimationFrame(() => textarea.focus());
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "sgl-yaml-actions";
-
-    const cancelBtn = document.createElement("button");
-    cancelBtn.className = "sgl-yaml-btn sgl-yaml-btn-cancel";
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", () => backdrop.remove());
-
-    const saveBtn = document.createElement("button");
-    saveBtn.className = "sgl-yaml-btn sgl-yaml-btn-save";
-    saveBtn.textContent = "Save";
-    saveBtn.addEventListener("click", () => {
-      let parsed = currentParsed;
-      if (!parsed && currentText) {
-        parsed = this._parseYaml(currentText);
-      }
-      if (!parsed || typeof parsed !== "object") {
-        alert("Invalid YAML");
-        return;
-      }
-      // Preserve cards from original config
-      const merged: Record<string, any> = {
-        ...parsed,
-        cards: sectionConfig.cards || [],
-      };
-      if (!merged.grid_area) merged.grid_area = gridArea;
-      if (!merged.type) merged.type = sectionConfig.type || "grid";
-      this._handleSectionConfigChanged(gridArea, merged);
-      backdrop.remove();
-    });
-
-    actions.append(cancelBtn, saveBtn);
-    dialog.append(header, editorContainer, actions);
-    backdrop.appendChild(dialog);
-
-    backdrop.addEventListener("click", (e) => {
-      if (e.target === backdrop) backdrop.remove();
-    });
-
-    this.shadowRoot.appendChild(backdrop);
   }
 
   // ── FAB (Add card) ──────────────────────────────────────────────────────
@@ -912,8 +501,6 @@ class GridLayout extends LitElement {
   }
 
   _render_fab() {
-    // In sections mode hui-section provides its own per-section "Add card"
-    // buttons, so the view-level FAB would only add orphan cards.
     if (this._config?.sections?.length) return html``;
     if (!this.lovelace?.editMode) return html``;
     return html`
@@ -926,459 +513,11 @@ class GridLayout extends LitElement {
   // ── Render ───────────────────────────────────────────────────────────────
 
   render() {
-    return html`<div id="root"></div>${this._render_fab()}`;
+    return html`<div id=${ROOT_ID}></div>${this._render_fab()}`;
   }
 
   static get styles() {
-    return css`
-      ha-fab {
-        position: fixed;
-        right: calc(16px + env(safe-area-inset-right));
-        bottom: calc(16px + env(safe-area-inset-bottom));
-        z-index: 1;
-      }
-      :host {
-        height: 100%;
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-      }
-      #root {
-        display: grid;
-        justify-content: stretch;
-        margin: var(--layout-margin);
-        padding: var(--layout-padding);
-        flex: 1;
-        min-height: 0;
-        overflow-y: var(--layout-overflow);
-      }
-      #root > *:not(.loose-cards-container) {
-        margin: var(--grid-section-margin, 4px 4px 8px);
-      }
-
-      /* Section containers */
-      .section-container {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        padding: var(--section-padding, 10px);
-      }
-      .section-container.scrollable {
-        overflow-y: auto;
-        scrollbar-width: none;
-        -webkit-overflow-scrolling: touch;
-      }
-      .section-container.scrollable::-webkit-scrollbar {
-        display: none;
-      }
-      .section-container.edit-mode {
-        border: 2px dashed var(--primary-color, #03a9f4);
-        border-radius: 8px;
-        padding: 8px;
-        background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.05);
-        transition: all 0.2s ease;
-      }
-      .section-container.edit-mode:hover {
-        background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.1);
-        border-color: var(--accent-color, #ff9800);
-      }
-      .section-grid-label {
-        position: absolute;
-        bottom: 4px;
-        right: 4px;
-        display: inline-flex;
-        align-items: center;
-        background: var(--primary-color, #03a9f4);
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        opacity: 0.4;
-        z-index: 1;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        backdrop-filter: blur(4px);
-        transition: opacity 0.15s;
-        cursor: pointer;
-        pointer-events: auto;
-        white-space: nowrap;
-        overflow: hidden;
-      }
-      .section-grid-edit-overlay {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0, 0, 0, 0.55);
-        border-radius: 4px;
-        opacity: 0;
-        transition: opacity 0.15s;
-      }
-      .section-grid-label:hover .section-grid-edit-overlay {
-        opacity: 1;
-      }
-      .section-container.edit-mode:hover .section-grid-label {
-        opacity: 0.7;
-      }
-      .section-container.edit-mode:has(hui-section:empty),
-      .section-container.edit-mode:has(hui-section[cards=""]) {
-        border-style: dotted;
-        background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.02);
-      }
-      .section-container.edit-mode:has(hui-section:empty):hover,
-      .section-container.edit-mode:has(hui-section[cards=""]):hover {
-        background: rgba(var(--rgb-accent-color, 255, 152, 0), 0.08);
-        border-color: var(--accent-color, #ff9800);
-      }
-
-      /* Loose cards container (edit mode only, for orphan view-level cards) */
-      .loose-cards-container {
-        grid-column: 1 / -1;
-        margin-top: 24px;
-        padding: 16px;
-        border: 2px dashed var(--warning-color, #ff9800);
-        border-radius: 8px;
-        background: rgba(255, 152, 0, 0.05);
-      }
-      .loose-cards-header {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        margin-bottom: 12px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid var(--divider-color, #e0e0e0);
-      }
-      .loose-cards-title {
-        font-size: 16px;
-        font-weight: 600;
-        color: var(--warning-color, #ff9800);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-      .loose-cards-subtitle {
-        font-size: 13px;
-        color: var(--secondary-text-color, #727272);
-        font-style: italic;
-      }
-      .loose-cards-wrapper {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: 12px;
-      }
-      .loose-cards-wrapper > * {
-        margin: 0;
-      }
-
-      /* ── Section YAML editor ──────────────────────────────────────── */
-
-      .sgl-yaml-editor {
-        position: fixed;
-        inset: 0;
-        z-index: 8;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        backdrop-filter: blur(4px);
-      }
-      .sgl-yaml-dialog {
-        background: var(--card-background-color, #1c1c1c);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        padding: 20px;
-        min-width: 400px;
-        max-width: 640px;
-        width: 90vw;
-        max-height: 85vh;
-        display: flex;
-        flex-direction: column;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-        font-family: var(--paper-font-body1_-_font-family, sans-serif);
-      }
-      .sgl-yaml-header {
-        font-size: 14px;
-        font-weight: 700;
-        color: var(--primary-text-color, #fff);
-        margin-bottom: 12px;
-        flex-shrink: 0;
-      }
-      .sgl-yaml-editor-container {
-        flex: 1;
-        min-height: 300px;
-        max-height: 60vh;
-        overflow: auto;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-      }
-      .sgl-yaml-editor-container ha-code-editor {
-        display: block;
-        --code-mirror-height: 100%;
-      }
-      .sgl-yaml-textarea {
-        width: 100%;
-        height: 100%;
-        min-height: 300px;
-        background: rgba(0, 0, 0, 0.2);
-        color: var(--primary-text-color, #fff);
-        border: none;
-        padding: 12px;
-        font-family: "Roboto Mono", "SFMono-Regular", monospace;
-        font-size: 13px;
-        line-height: 1.5;
-        resize: none;
-        box-sizing: border-box;
-        tab-size: 2;
-      }
-      .sgl-yaml-textarea:focus {
-        outline: none;
-      }
-      .sgl-yaml-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-top: 12px;
-        flex-shrink: 0;
-      }
-      .sgl-yaml-btn {
-        border: none;
-        border-radius: 6px;
-        padding: 8px 20px;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: opacity 0.15s;
-      }
-      .sgl-yaml-btn:hover { opacity: 0.85; }
-      .sgl-yaml-btn-cancel {
-        background: rgba(255, 255, 255, 0.1);
-        color: var(--primary-text-color, #fff);
-      }
-      .sgl-yaml-btn-save {
-        background: var(--primary-color, #03a9f4);
-        color: white;
-      }
-
-      /* ── Overlays ─────────────────────────────────────────────────── */
-
-      .sgl-overlay {
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        opacity: 0;
-        z-index: var(--sgl-overlay-z-index, 9999);
-      }
-      .sgl-overlay-content {
-        font-size: var(--sgl-overlay-font-size, 80px);
-        font-weight: 200;
-        color: var(--sgl-overlay-color, white);
-      }
-
-      /* Pulse */
-      .sgl-overlay[data-animation="pulse"] {
-        background:
-          radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 50%),
-          radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.3) 0%, transparent 70%);
-        background-size: 0% 0%, 100% 100%;
-        background-position: center;
-        background-repeat: no-repeat;
-      }
-      .sgl-overlay.active[data-animation="pulse"] {
-        animation: sgl-pulse var(--sgl-overlay-duration, 3s) cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      }
-      .sgl-overlay.active[data-animation="pulse"] .sgl-overlay-content {
-        animation: sgl-pulse-content var(--sgl-overlay-duration, 3s) cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      }
-      @keyframes sgl-pulse {
-        0%   { opacity: 0; backdrop-filter: blur(0px); background-size: 0% 0%, 100% 100%; }
-        15%  { opacity: 1; backdrop-filter: blur(var(--sgl-overlay-blur, 6px)); background-size: 120% 120%, 100% 100%; }
-        60%  { opacity: 1; backdrop-filter: blur(var(--sgl-overlay-blur, 6px)); background-size: 250% 250%, 100% 100%; }
-        100% { opacity: 0; backdrop-filter: blur(0px); background-size: 400% 400%, 100% 100%; }
-      }
-      @keyframes sgl-pulse-content {
-        0%   { transform: scale(0); opacity: 0; text-shadow: none; }
-        20%  { transform: scale(1.4); opacity: 1; text-shadow: 0 0 40px currentColor, 0 0 100px currentColor; }
-        35%  { transform: scale(1); text-shadow: 0 0 30px currentColor, 0 0 80px currentColor; }
-        60%  { opacity: 1; text-shadow: 0 0 20px currentColor; }
-        100% { transform: scale(1); opacity: 0; text-shadow: none; }
-      }
-
-      /* Fade */
-      .sgl-overlay.active[data-animation="fade"] {
-        animation: sgl-fade var(--sgl-overlay-duration, 3s) ease forwards;
-      }
-      .sgl-overlay.active[data-animation="fade"] .sgl-overlay-content {
-        animation: sgl-fade var(--sgl-overlay-duration, 3s) ease forwards;
-      }
-      @keyframes sgl-fade {
-        0%   { opacity: 0; }
-        15%  { opacity: 1; }
-        85%  { opacity: 1; }
-        100% { opacity: 0; }
-      }
-
-      /* Flash */
-      .sgl-overlay.active[data-animation="flash"] {
-        animation: sgl-flash var(--sgl-overlay-duration, 1.5s) ease-out forwards;
-      }
-      .sgl-overlay.active[data-animation="flash"] .sgl-overlay-content {
-        animation: sgl-flash-content var(--sgl-overlay-duration, 1.5s) ease-out forwards;
-      }
-      @keyframes sgl-flash {
-        0%   { opacity: 0; backdrop-filter: blur(0px); }
-        8%   { opacity: 1; backdrop-filter: blur(var(--sgl-overlay-blur, 4px)); }
-        20%  { opacity: 1; }
-        100% { opacity: 0; backdrop-filter: blur(0px); }
-      }
-      @keyframes sgl-flash-content {
-        0%   { transform: scale(0.5); opacity: 0; }
-        8%   { transform: scale(1.2); opacity: 1; }
-        20%  { transform: scale(1); opacity: 1; }
-        100% { transform: scale(0.95); opacity: 0; }
-      }
-
-      /* Slide Up */
-      .sgl-overlay.active[data-animation="slide-up"] {
-        animation: sgl-slide-up var(--sgl-overlay-duration, 3s) cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      }
-      .sgl-overlay.active[data-animation="slide-up"] .sgl-overlay-content {
-        animation: sgl-slide-up-content var(--sgl-overlay-duration, 3s) cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      }
-      @keyframes sgl-slide-up {
-        0%   { opacity: 0; }
-        15%  { opacity: 1; }
-        85%  { opacity: 1; }
-        100% { opacity: 0; }
-      }
-      @keyframes sgl-slide-up-content {
-        0%   { transform: translateY(100px); opacity: 0; }
-        20%  { transform: translateY(0); opacity: 1; }
-        80%  { transform: translateY(0); opacity: 1; }
-        100% { transform: translateY(-30px); opacity: 0; }
-      }
-
-      /* None (static — visible while state matches) */
-      .sgl-overlay.active[data-animation="none"] {
-        opacity: 1;
-      }
-      .sgl-overlay.active[data-animation="none"] .sgl-overlay-content {
-        opacity: 1;
-      }
-
-      /* ── Overlay tester (edit mode) ──────────────────────────────── */
-
-      .sgl-overlay-tester {
-        position: fixed;
-        bottom: 80px;
-        right: calc(16px + env(safe-area-inset-right));
-        z-index: 7;
-        background: color-mix(in srgb, var(--card-background-color, #1c1c1c) 75%, transparent);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 12px;
-        padding: 10px 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        min-width: 200px;
-        max-width: 320px;
-        font-family: var(--paper-font-body1_-_font-family, sans-serif);
-        transition: padding 0.2s ease, min-width 0.2s ease, border-radius 0.2s ease;
-      }
-      .sgl-overlay-tester.collapsed {
-        min-width: 0;
-        padding: 4px 6px;
-        border-radius: 8px;
-      }
-      .sgl-overlay-tester-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-      .sgl-overlay-tester-title {
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: var(--primary-color, #03a9f4);
-        transition: font-size 0.2s ease, width 0.2s ease, opacity 0.2s ease;
-        overflow: hidden;
-      }
-      .sgl-overlay-tester.collapsed .sgl-overlay-tester-title {
-        font-size: 0;
-        width: 0;
-        opacity: 0;
-      }
-      .sgl-overlay-tester-minimize {
-        background: none;
-        border: none;
-        color: var(--secondary-text-color, #aaa);
-        font-size: 16px;
-        line-height: 1;
-        cursor: pointer;
-        padding: 0 2px;
-        pointer-events: auto;
-        transition: color 0.15s;
-      }
-      .sgl-overlay-tester-minimize:hover {
-        color: var(--primary-text-color, #fff);
-      }
-      .sgl-overlay-tester-body {
-        margin-top: 8px;
-        padding-top: 8px;
-        border-top: 1px solid rgba(255,255,255,0.08);
-        overflow: hidden;
-        transition: max-height 0.2s ease, opacity 0.2s ease, margin 0.2s ease;
-        max-height: 400px;
-        opacity: 1;
-      }
-      .sgl-overlay-tester.collapsed .sgl-overlay-tester-body {
-        max-height: 0;
-        opacity: 0;
-        margin-top: 0;
-        padding-top: 0;
-        border-top: none;
-      }
-      .sgl-overlay-tester-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        padding: 4px 0;
-      }
-      .sgl-overlay-tester-label {
-        font-size: 12px;
-        color: var(--primary-text-color, #fff);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        flex: 1;
-      }
-      .sgl-overlay-tester-btn {
-        background: var(--primary-color, #03a9f4);
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 4px 12px;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        white-space: nowrap;
-        transition: opacity 0.15s;
-        pointer-events: auto;
-      }
-      .sgl-overlay-tester-btn:hover {
-        opacity: 0.85;
-      }
-      .sgl-overlay-tester-btn:active {
-        opacity: 0.7;
-      }
-    `;
+    return gridStyles;
   }
 }
 
