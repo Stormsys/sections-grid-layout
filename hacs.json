@@ -1,0 +1,7 @@
+{
+  "name": "Sections Grid Layout",
+  "content_in_root": true,
+  "filename": "sections-grid-layout.js",
+  "render_readme": true,
+  "homeassistant": "2024.2.0"
+}
